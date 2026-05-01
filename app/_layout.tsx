@@ -1,54 +1,44 @@
-import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
-import 'react-native-reanimated';
+import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { Colors } from "../constants/Design";
 
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary
-} from 'expo-router';
-
-export const unstable_settings = {
-  initialRouteName: '(drawer)', // Et non (tabs)
-};
-
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-    ...FontAwesome.font,
-  });
-
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
-  useEffect(() => {
-    if (error) throw error;
-  }, [error]);
-
-  useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
-
-  if (!loaded) {
-    return null;
-  }
-
-  return <RootLayoutNav />;
-}
-
-function RootLayoutNav() {
   return (
-    <Stack>
-      {/* C'est la seule ligne qui doit être là pour la navigation principale */}
-      <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
-      <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-    </Stack>
+    <>
+      <StatusBar style="light" backgroundColor={Colors.background} />
+      <Stack
+        screenOptions={{
+          headerStyle: { backgroundColor: Colors.background },
+          headerTintColor: Colors.textPrimary,
+          headerTitleStyle: {
+            fontWeight: "700",
+            fontSize: 17,
+            color: Colors.textPrimary,
+          },
+          headerShadowVisible: false,
+          contentStyle: { backgroundColor: Colors.background },
+          animation: "slide_from_right",
+        }}
+      >
+        <Stack.Screen
+          name="index"
+          options={{ title: "SmartWaste", headerShown: true }}
+        />
+        <Stack.Screen
+          name="driver"
+          options={{ title: "Driver Mode", headerBackTitle: "Home" }}
+        />
+        <Stack.Screen
+          name="user"
+          options={{ title: "Resident Mode", headerBackTitle: "Home" }}
+        />
+        <Stack.Screen
+          name="map"
+          options={{ title: "Live Tracking", headerBackTitle: "Back" }}
+        />
+      </Stack>
+    </>
   );
 }
