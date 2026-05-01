@@ -1,4 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Alert } from 'react-native'; // Ajoute Alert ici
+import api from '../services/api'; // Ajoute ton service api ici
+
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -17,10 +20,28 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleLogin = () => {
-    router.replace("/roles");
-  };
+const handleLogin = async () => {
+  try {
+    // 1. Appel à l'API Laravel (on va créer cette route juste après)
+    const response = await api.post('/login', {
+      email: email,
+      password: password,
+    });
 
+    // 2. Si ça marche, on récupère les infos
+    const { token, user } = response.data;
+    
+    console.log("Connecté !", user);
+    
+    // 3. Direction le sélecteur de rôles
+    router.replace("/roles");
+
+  } catch (error: any) {
+    // Affiche une erreur si l'email ou le mot de passe est faux
+    Alert.alert("Erreur", "Identifiants incorrects ou serveur injoignable");
+    console.error(error);
+  }
+};
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.flex}>
