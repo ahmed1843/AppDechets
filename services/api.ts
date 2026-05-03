@@ -1,15 +1,10 @@
-import axios from 'axios';
+// services/api.ts
 
-// REMPLACE par l'adresse IP du PC qui fait tourner Laravel
-// Garde bien le :8000/api à la fin
-const API_URL = "http://192.168.1.10:8000/api/"; 
+// 1. On met JUSTE l'adresse IP ici
+const IP_ADDRESS = "192.168.1.11"; 
+const PORT = "8000";
 
-const api = axios.create({
-  baseURL: API_URL,
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  },
-});
+// 2. On construit l'URL proprement
+export const API_URL = `http://${IP_ADDRESS}:${PORT}/api`;
 
-export default api;
+export default API_URL;

@@ -11,8 +11,10 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  ActivityIndicator
 } from "react-native";
+import { API_URL } from "../services/api"; 
 
 const COLORS = {
   primary: "#166534",
@@ -26,14 +28,54 @@ const COLORS = {
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const [role, setRole] = useState("resident");
+  
+  // États pour le formulaire
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState("citizen"); // Aligné sur Beekeeper (citizen)
+  const [loading, setLoading] = useState(false);
 
-  const handleRegister = () => {
-    if (role === "driver") {
-      Alert.alert("Mode Chauffeur", "Compte créé !");
-    } else {
-      Alert.alert("Mode Citoyen", "Bienvenue !");
-      router.replace("/(tabs)");
+  const handleRegister = async () => {
+    if (!name || !email || !password) {
+      alert("Veuillez remplir tous les champs.");
+      return;
+    }
+
+    if (password.length < 6) {
+        alert("Le mot de passe doit faire au moins 6 caractères.");
+        return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/register`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: name,
+          email: email,
+          password: password,
+          role: role, // Envoie "citizen" ou "driver"
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        alert("Félicitations ! Votre compte EcoWaste est prêt.");
+        router.replace("/"); // Retour au Login
+      } else {
+        // Affiche l'erreur précise de Laravel (ex: email déjà pris)
+        alert(data.message || "L'inscription a échoué.");
+      }
+    } catch (error) {
+      alert("Erreur de connexion : Vérifiez que Laravel est lancé sur " + API_URL);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -55,7 +97,7 @@ export default function RegisterScreen() {
             <Text style={styles.title}>Créer un compte</Text>
           </View>
 
-          {/* Form */}
+          {/* Formulaire */}
           <View style={styles.form}>
             
             <View style={styles.inputWrapper}>
@@ -64,6 +106,8 @@ export default function RegisterScreen() {
                 style={styles.input}
                 placeholder="Nom complet"
                 placeholderTextColor="#94a3b8"
+                value={name}
+                onChangeText={setName}
               />
             </View>
 
@@ -74,6 +118,9 @@ export default function RegisterScreen() {
                 placeholder="Adresse email"
                 placeholderTextColor="#94a3b8"
                 keyboardType="email-address"
+                autoCapitalize="none"
+                value={email}
+                onChangeText={setEmail}
               />
             </View>
 
@@ -84,18 +131,20 @@ export default function RegisterScreen() {
                 placeholder="Mot de passe"
                 placeholderTextColor="#94a3b8"
                 secureTextEntry
+                value={password}
+                onChangeText={setPassword}
               />
             </View>
 
-            {/* Role */}
+            {/* Sélecteur de Rôle */}
             <Text style={styles.label}>Je suis un :</Text>
 
             <View style={styles.roleSelector}>
               <TouchableOpacity 
-                style={[styles.roleOption, role === "resident" && styles.roleActive]} 
-                onPress={() => setRole("resident")}
+                style={[styles.roleOption, role === "citizen" && styles.roleActive]} 
+                onPress={() => setRole("citizen")}
               >
-                <Text style={[styles.roleText, role === "resident" && styles.roleTextActive]}>
+                <Text style={[styles.roleText, role === "citizen" && styles.roleTextActive]}>
                   Citoyen
                 </Text>
               </TouchableOpacity>
@@ -110,10 +159,20 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
 
-                       {/* Button */}
-            <TouchableOpacity style={styles.registerBtn} onPress={handleRegister}>
-              <Text style={styles.registerBtnText}>Commencer mon impact</Text>
-              <Ionicons name="sparkles" size={20} color="white" />
+            {/* Bouton de Validation */}
+            <TouchableOpacity 
+              style={styles.registerBtn} 
+              onPress={handleRegister}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <>
+                  <Text style={styles.registerBtnText}>Commencer mon impact</Text>
+                  <Ionicons name="sparkles" size={20} color="white" />
+                </>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.loginLink} onPress={() => router.push("/")}>
@@ -145,7 +204,7 @@ const styles = StyleSheet.create({
     borderRadius: 18, paddingHorizontal: 15, height: 60, marginBottom: 15, 
     borderWidth: 1, borderColor: COLORS.border, elevation: 1 
   },
-  input: { flex: 1, marginLeft: 10, color: COLORS.text },
+  input: { flex: 1, marginLeft: 10, color: COLORS.text, fontSize: 16 },
   label: { color: COLORS.primary, fontWeight: "700", marginBottom: 15, marginLeft: 5 },
   roleSelector: { flexDirection: "row", gap: 10, marginBottom: 30 },
   roleOption: { 
@@ -162,5 +221,5 @@ const styles = StyleSheet.create({
   },
   registerBtnText: { color: "white", fontSize: 18, fontWeight: "700" },
   loginLink: { marginTop: 25, alignItems: "center" },
-  loginLinkText: { color: COLORS.muted }
+  loginLinkText: { color: COLORS.muted, fontSize: 15 }
 });
