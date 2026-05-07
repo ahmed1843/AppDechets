@@ -1,44 +1,19 @@
-import { Stack } from "expo-router";
-import { StatusBar } from "expo-status-bar";
-import { Colors } from "../constants/Design";
 
+// app/_layout.tsx
+import { Stack } from "expo-router";
+import { useEffect } from "react";
+import { Platform } from "react-native";
 
 
 export default function RootLayout() {
-  return (
-    <>
-      <StatusBar style="light" backgroundColor={Colors.background} />
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: Colors.background },
-          headerTintColor: Colors.textPrimary,
-          headerTitleStyle: {
-            fontWeight: "700",
-            fontSize: 17,
-            color: Colors.textPrimary,
-          },
-          headerShadowVisible: false,
-          contentStyle: { backgroundColor: Colors.background },
-          animation: "slide_from_right",
-        }}
-      >
-        <Stack.Screen
-          name="index"
-          options={{ title: "SmartWaste", headerShown: true }}
-        />
-        <Stack.Screen
-          name="driver"
-          options={{ title: "Driver Mode", headerBackTitle: "Home" }}
-        />
-        <Stack.Screen
-          name="user"
-          options={{ title: "Resident Mode", headerBackTitle: "Home" }}
-        />
-        <Stack.Screen
-          name="map"
-          options={{ title: "Live Tracking", headerBackTitle: "Back" }}
-        />
-      </Stack>
-    </>
-  );
+  useEffect(() => {
+    // Demander la permission pour les notifications web
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+        Notification.requestPermission();
+      }
+    }
+  }, []);
+
+  return <Stack />;
 }

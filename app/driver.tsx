@@ -1,250 +1,282 @@
-import React from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  ScrollView, 
-  SafeAreaView, 
-  StatusBar,
-  Platform 
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter } from "expo-router";
+import React, { useState } from "react";
+import {
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  ActivityIndicator,
+  Alert,
+  ScrollView
+} from "react-native";
 
-const DARK_COLORS = {
-  bg: '#0f172a',      // Bleu-noir profond
-  card: '#1e293b',    // Gris-bleu ardoise
-  accent: '#22c55e',  // Vert néon (Identité EcoWaste)
-  text: '#f8fafc',    // Blanc cassé
-  muted: '#94a3b8',   // Gris bleuâtre
-  warning: '#f59e0b', // Ambre pour les alertes
-  danger: '#ef4444'   // Rouge pour les urgences
+// Plus besoin de modifier cette ligne quand tu changes de Wifi !
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
+
+export default function DriverScreen() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [currentZone, setCurrentZone] = useState<string | null>("Plateau");
+  const [isCollecting, setIsCollecting] = useState(false);
+  const [startTime, setStartTime] = useState<Date | null>(null);
+  
+  // ✅ Vraies zones (Plateau, Almadies, Médina)
+  const [zones, setZones] = useState([
+    { id: 1, name: "Plateau", habitants: 45, status: "pending" },
+    { id: 2, name: "Almadies", habitants: 58, status: "pending" },
+    { id: 3, name: "Médina", habitants: 63, status: "pending" },
+  ]);
+
+  // Fonction pour envoyer la notification
+  const sendNotification = async (street: string, action: string) => {
+    const token = localStorage.getItem('token');
+    console.log("📤 Envoi notification à:", `${API_URL}/notify-street`);
+    console.log("🔑 Token:", token);
+    console.log("📦 Body:", { street, action });
+    
+    try {
+      const response = await fetch(`${API_URL}/notify-street`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ street, action })
+      });
+      
+      const data = await response.json();
+      console.log("📥 Réponse:", data);
+      
+      if (response.ok) {
+        return { success: true, notified: data.notified };
+      } else {
+        return { success: false, error: data.error || data.message };
+      }
+    } catch (error) {
+      console.error("❌ Erreur réseau:", error);
+      return { success: false, error: "Impossible de contacter le serveur" };
+    }
+  };
+
+const handleArrival = () => {
+  if (!currentZone) return;
+
+  Alert.alert(
+    "🚛 Envoyer l'alerte ?",
+    `Les habitants de ${currentZone} seront prévenus`,
+    [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "✅ Envoyer",
+        onPress: async () => {
+          try {
+            setLoading(true);
+
+            // Active l'alerte côté Laravel
+            const response = await fetch(`${API_URL}/alerte-chauffeur`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                zone_name: currentZone,
+                actif: true,
+              }),
+            });
+
+            const data = await response.json();
+
+            console.log("✅ Alerte envoyée :", data);
+
+            setIsCollecting(true);
+
+            setZones(prev =>
+              prev.map(z =>
+                z.name === currentZone
+                  ? { ...z, status: "en_cours" }
+                  : z
+              )
+            );
+
+            Alert.alert(
+              "🚛 Collecte démarrée",
+              `Notification envoyée pour ${currentZone}`
+            );
+          } catch (error) {
+            console.log(error);
+
+            Alert.alert(
+              "Erreur",
+              "Impossible d'envoyer l'alerte"
+            );
+          } finally {
+            setLoading(false);
+          }
+        },
+      },
+    ]
+  );
 };
 
-export default function DriverDashboard() {
-  const router = useRouter();
+const handleDeparture = () => {
+  if (!currentZone) return;
 
-  const handleLogout = () => {
-    // On pourrait ajouter ici la logique pour supprimer le token
-    router.replace('/');
+  Alert.alert(
+    "🏁 Fin de collecte ?",
+    `Terminer la collecte dans ${currentZone}`,
+    [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "✅ Terminer",
+        onPress: async () => {
+          try {
+            setLoading(true);
+
+            await fetch(`${API_URL}/alerte-chauffeur`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                zone_name: currentZone,
+                actif: false,
+              }),
+            });
+
+            setIsCollecting(false);
+
+            setZones(prev =>
+              prev.map(z =>
+                z.name === currentZone
+                  ? { ...z, status: "termine" }
+                  : z
+              )
+            );
+
+            Alert.alert(
+              "✅ Collecte terminée",
+              `${currentZone} terminé`
+            );
+          } catch (error) {
+            console.log(error);
+          } finally {
+            setLoading(false);
+          }
+        },
+      },
+    ]
+  );
+};
+
+  const getZoneStatusColor = (status: string) => {
+    switch(status) {
+      case 'termine': return '#10b981';
+      case 'en_cours': return '#f59e0b';
+      default: return '#e2e8f0';
+    }
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#166534" />
+        <Text style={styles.loadingText}>Envoi de l'alerte...</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView showsVerticalScrollIndicator={false}>
         
-        {/* --- HEADER --- */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.welcomeText}>Bonjour, Chauffeur</Text>
-            <Text style={styles.truckId}>Camion #DK-2024-05</Text>
-          </View>
-          <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-            <Ionicons name="log-out-outline" size={24} color={DARK_COLORS.accent} />
+          <Text style={styles.headerTitle}>🚛 Mode Collecte</Text>
+          <TouchableOpacity onPress={() => router.replace("/")}>
+            <Ionicons name="log-out" size={24} color="#94a3b8" />
           </TouchableOpacity>
         </View>
 
-        {/* --- CARTE DE STATUT TEMPS RÉEL --- */}
-        <View style={styles.statusCard}>
-          <View style={styles.statusInfo}>
-            <View style={styles.iconBg}>
-              <Ionicons name="navigate-circle" size={32} color={DARK_COLORS.accent} />
-            </View>
-            <View style={{marginLeft: 15}}>
-              <Text style={styles.statusLabel}>Zone de collecte actuelle</Text>
-              <Text style={styles.statusValue}>Médina, Secteur 4</Text>
-            </View>
-          </View>
-          <View style={styles.badge}>
-            <View style={styles.dot} />
-            <Text style={styles.badgeText}>EN SERVICE</Text>
-          </View>
+        <View style={styles.currentZoneCard}>
+          <Text style={styles.currentZoneLabel}>📍 Zone actuelle</Text>
+          <Text style={styles.currentZoneName}>{currentZone || "Non sélectionnée"}</Text>
         </View>
 
-        {/* --- STATISTIQUES VÉHICULE --- */}
-        <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Ionicons name="funnel-outline" size={20} color={DARK_COLORS.accent} />
-            <Text style={styles.statNumber}>85%</Text>
-            <Text style={styles.statLabel}>Remplissage</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Ionicons name="location-outline" size={20} color={DARK_COLORS.accent} />
-            <Text style={styles.statNumber}>12</Text>
-            <Text style={styles.statLabel}>Points restants</Text>
-          </View>
+        <Text style={styles.sectionTitle}>📋 Zones à collecter</Text>
+        <View style={styles.zonesList}>
+          {zones.map((zone) => (
+            <TouchableOpacity
+              key={zone.id}
+              style={[
+                styles.zoneCard,
+                currentZone === zone.name && styles.zoneCardSelected,
+                zone.status === 'termine' && styles.zoneCardCompleted
+              ]}
+              onPress={() => setCurrentZone(zone.name)}
+            >
+              <View style={styles.zoneInfo}>
+                <Text style={[
+                  styles.zoneName,
+                  currentZone === zone.name && styles.zoneNameSelected
+                ]}>
+                  {zone.name}
+                </Text>
+                <Text style={styles.zoneHabitants}>
+                  <Ionicons name="people" size={12} color="#64748b" /> {zone.habitants} habitants
+                </Text>
+              </View>
+              <View style={[styles.zoneStatus, { backgroundColor: getZoneStatusColor(zone.status) }]}>
+                {zone.status === 'termine' && <Ionicons name="checkmark" size={16} color="#fff" />}
+              </View>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* --- SECTION ALERTES --- */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Alertes Citoyennes</Text>
-          <TouchableOpacity>
-            <Text style={styles.seeAll}>Voir tout</Text>
-          </TouchableOpacity>
-        </View>
-        
-        {/* Alerte 1 */}
-        <TouchableOpacity style={styles.alertItem}>
-          <View style={[styles.alertIcon, {backgroundColor: 'rgba(245, 158, 11, 0.1)'}]}>
-            <Ionicons name="warning" size={24} color={DARK_COLORS.warning} />
-          </View>
-          <View style={{flex: 1, marginLeft: 15}}>
-            <Text style={styles.alertText}>Dépôt sauvage signalé</Text>
-            <Text style={styles.alertSub}>Rue 10 x Blaise Diagne</Text>
-          </View>
-          <Text style={styles.alertTime}>Il y a 5 min</Text>
-        </TouchableOpacity>
-
-        {/* Alerte 2 */}
-        <TouchableOpacity style={styles.alertItem}>
-          <View style={[styles.alertIcon, {backgroundColor: 'rgba(34, 197, 94, 0.1)'}]}>
-            <Ionicons name="trash-bin" size={24} color={DARK_COLORS.accent} />
-          </View>
-          <View style={{flex: 1, marginLeft: 15}}>
-            <Text style={styles.alertText}>Bac plein (RFID)</Text>
-            <Text style={styles.alertSub}>Face Cinéma El Mansour</Text>
-          </View>
-          <Text style={styles.alertTime}>Il y a 12 min</Text>
-        </TouchableOpacity>
+        {currentZone && (
+          !isCollecting ? (
+            <TouchableOpacity style={styles.actionButton} onPress={handleArrival}>
+              <Ionicons name="notifications" size={48} color="#fff" />
+              <Text style={styles.actionButtonTitle}>Je suis arrivé</Text>
+              <Text style={styles.actionButtonSubtitle}>dans {currentZone}</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={[styles.actionButton, styles.actionButtonActive]} onPress={handleDeparture}>
+              <Ionicons name="checkmark-circle" size={48} color="#fff" />
+              <Text style={styles.actionButtonTitle}>Collecte terminée</Text>
+              <Text style={styles.actionButtonSubtitle}>{currentZone} ✓</Text>
+            </TouchableOpacity>
+          )
+        )}
 
       </ScrollView>
-
-      {/* --- BARRE D'ACTION BASSE --- */}
-      <View style={styles.bottomActions}>
-        <TouchableOpacity 
-          style={styles.mainButton}
-          onPress={() => router.push('/map')} // On pourra lier ta carte ici
-        >
-          <Ionicons name="map" size={22} color="#000" />
-          <Text style={styles.mainButtonText}>Lancer l'itinéraire GPS</Text>
-        </TouchableOpacity>
-      </View>
-
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: DARK_COLORS.bg,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 
-  },
-  scrollContent: { padding: 20, paddingBottom: 110 },
-  
-  header: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    marginBottom: 30, 
-    marginTop: 10 
-  },
-  welcomeText: { color: DARK_COLORS.muted, fontSize: 14, fontWeight: '500' },
-  truckId: { color: DARK_COLORS.text, fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
-  logoutBtn: { 
-    padding: 12, 
-    backgroundColor: DARK_COLORS.card, 
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)'
-  },
-
-  statusCard: { 
-    backgroundColor: DARK_COLORS.card, 
-    padding: 20, 
-    borderRadius: 24, 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center',
-    marginBottom: 25,
-    shadowColor: "#000",
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 8
-  },
-  statusInfo: { flexDirection: 'row', alignItems: 'center' },
-  iconBg: { 
-    backgroundColor: 'rgba(34, 197, 94, 0.1)', 
-    padding: 10, 
-    borderRadius: 15 
-  },
-  statusLabel: { color: DARK_COLORS.muted, fontSize: 12, marginBottom: 2 },
-  statusValue: { color: DARK_COLORS.text, fontSize: 18, fontWeight: 'bold' },
-  badge: { 
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(34, 197, 94, 0.1)', 
-    paddingHorizontal: 12, 
-    paddingVertical: 6, 
-    borderRadius: 10 
-  },
-  dot: { 
-    width: 8, 
-    height: 8, 
-    borderRadius: 4, 
-    backgroundColor: DARK_COLORS.accent, 
-    marginRight: 6 
-  },
-  badgeText: { color: DARK_COLORS.accent, fontSize: 10, fontWeight: '900' },
-
-  statsRow: { flexDirection: 'row', gap: 15, marginBottom: 35 },
-  statBox: { 
-    flex: 1, 
-    backgroundColor: DARK_COLORS.card, 
-    padding: 20, 
-    borderRadius: 24, 
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.03)'
-  },
-  statNumber: { color: DARK_COLORS.text, fontSize: 28, fontWeight: '900', marginTop: 10 },
-  statLabel: { color: DARK_COLORS.muted, fontSize: 12, marginTop: 4 },
-
-  sectionHeader: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    marginBottom: 15 
-  },
-  sectionTitle: { color: DARK_COLORS.text, fontSize: 20, fontWeight: 'bold' },
-  seeAll: { color: DARK_COLORS.accent, fontSize: 14, fontWeight: '600' },
-
-  alertItem: { 
-    backgroundColor: DARK_COLORS.card, 
-    padding: 18, 
-    borderRadius: 22, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.03)'
-  },
-  alertIcon: { width: 50, height: 50, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  alertText: { color: DARK_COLORS.text, fontWeight: 'bold', fontSize: 16 },
-  alertSub: { color: DARK_COLORS.muted, fontSize: 13, marginTop: 2 },
-  alertTime: { color: DARK_COLORS.muted, fontSize: 10, alignSelf: 'flex-start' },
-
-  bottomActions: { 
-    position: 'absolute', 
-    bottom: 30, 
-    left: 20, 
-    right: 20 
-  },
-  mainButton: { 
-    backgroundColor: DARK_COLORS.accent, 
-    height: 70, 
-    borderRadius: 22, 
-    flexDirection: 'row', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    gap: 12,
-    shadowColor: DARK_COLORS.accent, 
-    shadowOpacity: 0.4, 
-    shadowRadius: 15, 
-    elevation: 12
-  },
-  mainButtonText: { color: '#000', fontSize: 18, fontWeight: '900' }
+  container: { flex: 1, backgroundColor: '#F7FBF7' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F7FBF7' },
+  loadingText: { marginTop: 12, fontSize: 16, color: '#64748b' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
+  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b' },
+  currentZoneCard: { backgroundColor: '#166534', marginHorizontal: 20, marginTop: 10, marginBottom: 20, padding: 20, borderRadius: 20, alignItems: 'center' },
+  currentZoneLabel: { fontSize: 14, color: 'rgba(255,255,255,0.8)', marginBottom: 8 },
+  currentZoneName: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#64748b', marginHorizontal: 20, marginBottom: 12 },
+  zonesList: { paddingHorizontal: 20, gap: 10, marginBottom: 30 },
+  zoneCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: 16, borderRadius: 16, borderWidth: 2, borderColor: '#e2e8f0' },
+  zoneCardSelected: { borderColor: '#166534', backgroundColor: '#f0fdf4' },
+  zoneCardCompleted: { backgroundColor: '#f8fafc', opacity: 0.6 },
+  zoneInfo: { flex: 1 },
+  zoneName: { fontSize: 16, fontWeight: '600', color: '#1e293b', marginBottom: 4 },
+  zoneNameSelected: { color: '#166534' },
+  zoneHabitants: { fontSize: 12, color: '#64748b' },
+  zoneStatus: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  actionButton: { backgroundColor: '#166534', borderRadius: 24, padding: 32, alignItems: 'center', marginHorizontal: 20, marginBottom: 30 },
+  actionButtonActive: { backgroundColor: '#f59e0b' },
+  actionButtonTitle: { fontSize: 24, fontWeight: 'bold', color: '#fff', marginTop: 12 },
+  actionButtonSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.9)', marginTop: 4 },
 });

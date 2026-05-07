@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -33,8 +33,41 @@ export default function RegisterScreen() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState("citizen"); // Aligné sur Beekeeper (citizen)
+  const [role, setRole] = useState("citizen");
+  const [street, setStreet] = useState("");
+  const [streets, setStreets] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingStreets, setLoadingStreets] = useState(false);
+
+  // ✅ Liste des vraies zones (Plateau, Almadies, Médina)
+  const realStreets = [
+    "Plateau",
+    "Almadies",
+    "Médina"
+  ];
+
+  useEffect(() => {
+    fetchStreets();
+  }, []);
+
+  const fetchStreets = async () => {
+    setLoadingStreets(true);
+    try {
+      const response = await fetch(`${API_URL}/streets`);
+      if (response.ok) {
+        const data = await response.json();
+        setStreets(data);
+      } else {
+        // ✅ Utiliser les vraies zones
+        setStreets(realStreets);
+      }
+    } catch (error) {
+      console.error("Erreur chargement rues:", error);
+      setStreets(realStreets);
+    } finally {
+      setLoadingStreets(false);
+    }
+  };
 
   const handleRegister = async () => {
     if (!name || !email || !password) {
@@ -45,6 +78,12 @@ export default function RegisterScreen() {
     if (password.length < 6) {
         alert("Le mot de passe doit faire au moins 6 caractères.");
         return;
+    }
+
+    // Vérifier la rue pour les citoyens
+    if (role === "citizen" && !street) {
+      alert("Veuillez sélectionner votre zone.");
+      return;
     }
 
     setLoading(true);
@@ -59,7 +98,8 @@ export default function RegisterScreen() {
           name: name,
           email: email,
           password: password,
-          role: role, // Envoie "citizen" ou "driver"
+          role: role,
+          street: role === "citizen" ? street : null,
         }),
       });
 
@@ -67,9 +107,18 @@ export default function RegisterScreen() {
 
       if (response.ok) {
         alert("Félicitations ! Votre compte EcoWaste est prêt.");
-        router.replace("/"); // Retour au Login
+        
+        if (role === "driver") {
+          if (data.token) {
+            localStorage.setItem('token', data.token);
+            router.replace("/driver");
+          } else {
+            router.replace("/");
+          }
+        } else {
+          router.replace("/");
+        }
       } else {
-        // Affiche l'erreur précise de Laravel (ex: email déjà pris)
         alert(data.message || "L'inscription a échoué.");
       }
     } catch (error) {
@@ -145,7 +194,7 @@ export default function RegisterScreen() {
                 onPress={() => setRole("citizen")}
               >
                 <Text style={[styles.roleText, role === "citizen" && styles.roleTextActive]}>
-                  Citoyen
+                  🏠 Citoyen
                 </Text>
               </TouchableOpacity>
 
@@ -154,10 +203,46 @@ export default function RegisterScreen() {
                 onPress={() => setRole("driver")}
               >
                 <Text style={[styles.roleText, role === "driver" && styles.roleTextActive]}>
-                  Chauffeur
+                  🚛 Chauffeur
                 </Text>
               </TouchableOpacity>
             </View>
+
+            {/* Sélection de la zone - UNIQUEMENT pour les citoyens */}
+            {role === "citizen" && (
+              <>
+                <Text style={styles.label}>📍 Dans quelle zone habitez-vous ?</Text>
+                
+                {loadingStreets ? (
+                  <ActivityIndicator color={COLORS.primary} style={{ marginVertical: 20 }} />
+                ) : (
+                  <ScrollView style={styles.streetsList} showsVerticalScrollIndicator={false}>
+                    {streets.map((s) => (
+                      <TouchableOpacity
+                        key={s}
+                        style={[
+                          styles.streetOption,
+                          street === s && styles.streetOptionActive
+                        ]}
+                        onPress={() => setStreet(s)}
+                      >
+                        <Ionicons 
+                          name={street === s ? "radio-button-on" : "radio-button-off"} 
+                          size={20} 
+                          color={street === s ? COLORS.primary : COLORS.muted} 
+                        />
+                        <Text style={[
+                          styles.streetText,
+                          street === s && styles.streetTextActive
+                        ]}>
+                          {s}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+              </>
+            )}
 
             {/* Bouton de Validation */}
             <TouchableOpacity 
@@ -169,7 +254,9 @@ export default function RegisterScreen() {
                 <ActivityIndicator color="white" />
               ) : (
                 <>
-                  <Text style={styles.registerBtnText}>Commencer mon impact</Text>
+                  <Text style={styles.registerBtnText}>
+                    {role === "citizen" ? "Commencer mon impact" : "Démarrer la collecte"}
+                  </Text>
                   <Ionicons name="sparkles" size={20} color="white" />
                 </>
               )}
@@ -205,8 +292,8 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: COLORS.border, elevation: 1 
   },
   input: { flex: 1, marginLeft: 10, color: COLORS.text, fontSize: 16 },
-  label: { color: COLORS.primary, fontWeight: "700", marginBottom: 15, marginLeft: 5 },
-  roleSelector: { flexDirection: "row", gap: 10, marginBottom: 30 },
+  label: { color: COLORS.primary, fontWeight: "700", marginBottom: 15, marginLeft: 5, marginTop: 10 },
+  roleSelector: { flexDirection: "row", gap: 10, marginBottom: 20 },
   roleOption: { 
     flex: 1, padding: 15, borderRadius: 15, backgroundColor: "white", 
     alignItems: "center", borderWidth: 1, borderColor: COLORS.border 
@@ -214,10 +301,36 @@ const styles = StyleSheet.create({
   roleActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   roleText: { color: COLORS.muted, fontWeight: "600" },
   roleTextActive: { color: "white" },
+  streetsList: { maxHeight: 200, marginBottom: 20 },
+  streetOption: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    paddingVertical: 12, 
+    paddingHorizontal: 15,
+    backgroundColor: "white",
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 10
+  },
+  streetOptionActive: { 
+    borderColor: COLORS.primary, 
+    backgroundColor: '#f0fdf4' 
+  },
+  streetText: { 
+    fontSize: 14, 
+    color: COLORS.text,
+    flex: 1
+  },
+  streetTextActive: { 
+    color: COLORS.primary, 
+    fontWeight: "500" 
+  },
   registerBtn: { 
     backgroundColor: COLORS.primary, height: 60, borderRadius: 18, 
     flexDirection: "row", justifyContent: "center", alignItems: "center", 
-    gap: 10, elevation: 5 
+    gap: 10, elevation: 5, marginTop: 10
   },
   registerBtnText: { color: "white", fontSize: 18, fontWeight: "700" },
   loginLink: { marginTop: 25, alignItems: "center" },

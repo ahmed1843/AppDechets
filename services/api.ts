@@ -1,10 +1,7 @@
 // services/api.ts
 
-// 1. On met JUSTE l'adresse IP ici
-const IP_ADDRESS = "192.168.1.11"; 
-const PORT = "8000";
-
-// 2. On construit l'URL proprement
-export const API_URL = `http://${IP_ADDRESS}:${PORT}/api`;
+// 1. On récupère l'URL du .env
+// 2. On met une adresse complète par défaut au cas où (localhost)
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.11:8000/api";
 
 export default API_URL;

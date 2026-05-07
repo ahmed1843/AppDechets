@@ -1,195 +1,305 @@
+
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   SafeAreaView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  Alert
+  ScrollView,
+  Alert,
+  Switch
 } from "react-native";
-import { API_URL } from "../services/api";
+import * as Notifications from 'expo-notifications';
+import { registerForPushNotificationsAsync, savePushToken } from '../services/notifications';
 
-export default function LoginScreen() {
+// Plus besoin de modifier cette ligne quand tu changes de Wifi !
+import API_URL from "../services/api";
+
+
+// Configuration des notifications
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
+export default function HomeScreen() {
   const router = useRouter();
-  
-  // États pour stocker les saisies
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [userName, setUserName] = useState("Citoyen");
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [lastNotification, setLastNotification] = useState<{
+    zone: string;
+    type: 'arrivee' | 'depart';
+    time: string;
+  } | null>(null);
+  const [isCollecting, setIsCollecting] = useState(false);
+  const [street, setStreet] = useState<string | null>(null);
 
-const handleLogin = async () => {
-  if (!email || !password) {
-    Alert.alert("Champs vides", "Veuillez entrer votre email et votre mot de passe.");
-    return;
-  }
-
-  setLoading(true);
-  try {
-    const response = await fetch(`${API_URL}/login`, {
-      method: 'POST',
-      headers: { 
-          'Accept': 'application/json', 
-          'Content-Type': 'application/json' 
-      },
-      body: JSON.stringify({ email, password }),
+  // Setup des notifications Expo + écouteurs
+  useEffect(() => {
+    const setup = async () => {
+      // 1. Permission notifications web
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        const permission = await Notification.requestPermission();
+        setNotificationsEnabled(permission === 'granted');
+        if (permission === 'granted') console.log("🔔 Notifications web autorisées");
+      }
+      
+      // 2. Récupérer la rue de l'utilisateur
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${API_URL}/user`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (data.street) {
+          setStreet(data.street);
+          console.log("📍 Rue du citoyen:", data.street);
+        }
+      } catch (error) {
+        console.log("Erreur récupération rue:", error);
+      }
+      
+      // 3. Enregistrer le token Expo (push)
+      const expoToken = await registerForPushNotificationsAsync();
+      if (expoToken) {
+        console.log('📱 Push token Expo:', expoToken);
+        await savePushToken(expoToken);
+      }
+    };
+    
+    setup();
+    
+    // 4. Démarrer le polling
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(`${API_URL}/check-alerte`);
+        const data = await response.json();
+        console.log("📡 Polling alerte:", data);
+        console.log("📍 Rue stockée:", street);
+        
+        if (data.actif && data.zone === street) {
+          console.log("🚛 ALERTE ! Le camion est dans votre rue !");
+          Alert.alert(
+            "🚛 Collecte en cours !",
+            `Les éboueurs sont dans ${data.zone}. Sortez vos poubelles !`
+          );
+          if (Notification.permission === 'granted') {
+            new Notification("🚛 Collecte en cours", {
+              body: `Les éboueurs sont dans ${data.zone}. Sortez vos poubelles !`
+            });
+          }
+          setIsCollecting(true);
+          setLastNotification({
+            zone: data.zone,
+            type: 'arrivee',
+            time: "À l'instant"
+          });
+        }
+      } catch (error) {
+        console.log("Erreur polling:", error);
+      }
+    }, 5000);
+    
+    // 5. Écouteurs de notifications reçues (Expo)
+    const notificationListener = Notifications.addNotificationReceivedListener(notification => {
+      console.log('📱 Notification Expo reçue:', notification);
+      const title = notification.request.content.title ?? 'Notification';
+      const body = notification.request.content.body ?? '';
+      Alert.alert(title, body);
+      if (title && title.includes('Collecte en cours')) {
+        setIsCollecting(true);
+        const dataStreet = notification.request.content.data?.street;
+        setLastNotification({
+          zone: typeof dataStreet === 'string' ? dataStreet : 'Votre rue',
+          type: 'arrivee',
+          time: 'À l\'instant'
+        });
+      }
     });
+    
+    const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('🔔 Notification cliquée:', response);
+    });
+    
+    // Nettoyage
+    return () => {
+      clearInterval(interval);
+      notificationListener.remove();
+      responseListener.remove();
+    };
+  }, []); // Le tableau de dépendances vide garantit une exécution unique
 
-    const data = await response.json();
-
-    if (response.ok) {
-      // 1. Récupération du rôle
-      const userRole = data.user.role; 
-
-      // 2. Logique de redirection intelligente
-      if (userRole === 'driver') {
-        // Redirection directe vers le dashboard sombre du chauffeur
-        router.replace("/driver"); 
-      } 
-      else if (userRole === 'admin') {
-        // Si tu as un écran admin, sinon redirige vers roles
-        router.replace("/roles"); 
-} else {
-  router.replace("/home"); // Redirige vers le nouvel accueil citoyen
-}
-
+  // Fonction pour tester les notifications
+  const testNotification = () => {
+    if (notificationsEnabled) {
+      if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification("🧪 Test Notification", { body: "Ceci est une notification de test !" });
+      }
+      Alert.alert("✅ Notification test", "Une notification a été envoyée");
     } else {
-      Alert.alert("Erreur", data.message || "Email ou mot de passe incorrect.");
+      Alert.alert("🔕 Notifications désactivées", "Activez-les dans vos paramètres");
     }
-  } catch (error) {
-    console.error(error);
-    Alert.alert("Erreur Réseau", "Le serveur est injoignable. Vérifiez Docker et votre IP.");
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"} 
-        style={{flex: 1}}
-      >
-        {/* --- HEADER --- */}
+      <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <View style={styles.leafCircle}>
-            <Ionicons name="leaf" size={50} color="#22c55e" />
+          <View>
+            <Text style={styles.greeting}>Bonjour 👋</Text>
+            <Text style={styles.userName}>{userName}</Text>
+            {street && <Text style={styles.streetText}>📍 {street}</Text>}
           </View>
-          <Text style={styles.brandName}>EcoWaste</Text>
+          <TouchableOpacity style={styles.profileButton} onPress={() => router.push("/profile")}>
+            <View style={styles.profileInitial}>
+              <Text style={styles.profileInitialText}>{userName.charAt(0)}</Text>
+            </View>
+          </TouchableOpacity>
         </View>
 
-        {/* --- FORMULAIRE --- */}
-        <View style={styles.formContainer}>
-          <Text style={styles.welcomeText}>Connexion</Text>
-          
-          <View style={styles.inputGroup}>
-            <View style={styles.inputWrapper}>
-              <Ionicons name="mail-outline" size={20} color="#64748b" />
-              <TextInput 
-                style={styles.input} 
-                placeholder="Email" 
-                value={email} 
-                onChangeText={setEmail} 
-                autoCapitalize="none" 
-                keyboardType="email-address"
-                placeholderTextColor="#94a3b8"
-              />
-            </View>
-
-            <View style={styles.inputWrapper}>
-              <Ionicons name="lock-closed-outline" size={20} color="#64748b" />
-              <TextInput 
-                style={styles.input} 
-                placeholder="Mot de passe" 
-                secureTextEntry 
-                value={password} 
-                onChangeText={setPassword} 
-                placeholderTextColor="#94a3b8"
-              />
-            </View>
-          </View>
-
-          {/* --- BOUTON DE CONNEXION --- */}
-          <TouchableOpacity 
-            style={styles.loginButton} 
-            onPress={handleLogin} 
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text style={styles.loginButtonText}>Se connecter</Text>
-            )}
-          </TouchableOpacity>
-
-          {/* --- LIEN VERS INSCRIPTION --- */}
-          <TouchableOpacity 
-            onPress={() => router.push("/register")} 
-            style={{marginTop: 25, alignItems: 'center'}}
-          >
-            <Text style={{color: '#64748b', fontSize: 15}}>
-              Pas encore de compte ? <Text style={{color: '#166534', fontWeight: 'bold'}}>Créer un compte</Text>
+        <View style={styles.notifStatusCard}>
+          <View style={styles.notifStatusHeader}>
+            <Ionicons name="notifications" size={24} color={notificationsEnabled ? "#10b981" : "#94a3b8"} />
+            <Text style={styles.notifStatusTitle}>
+              {notificationsEnabled ? "Notifications activées" : "Notifications désactivées"}
             </Text>
+            <Switch
+              value={notificationsEnabled}
+              onValueChange={setNotificationsEnabled}
+              trackColor={{ false: '#e2e8f0', true: '#166534' }}
+            />
+          </View>
+          <Text style={styles.notifStatusText}>
+            {notificationsEnabled 
+              ? "🔔 Vous serez alerté quand les éboueurs arrivent dans votre rue"
+              : "🔕 Activez les notifications pour être alerté"}
+          </Text>
+        </View>
+
+        {isCollecting && (
+          <View style={styles.alertCard}>
+            <View style={styles.alertIconContainer}>
+              <Ionicons name="trash" size={32} color="#fff" />
+            </View>
+            <View style={styles.alertContent}>
+              <Text style={styles.alertTitle}>🚛 Collecte en cours !</Text>
+              <Text style={styles.alertDescription}>
+                Les éboueurs sont dans votre rue. Sortez vos poubelles maintenant.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {lastNotification && !isCollecting && (
+          <View style={styles.lastNotifCard}>
+            <Text style={styles.lastNotifLabel}>📱 Dernière notification</Text>
+            <Text style={styles.lastNotifText}>
+              {lastNotification.type === 'arrivee' ? '🚛 Début' : '✅ Fin'} de collecte - {lastNotification.zone}
+            </Text>
+            <Text style={styles.lastNotifTime}>{lastNotification.time}</Text>
+          </View>
+        )}
+
+        <Text style={styles.sectionTitle}>🗓️ Prochaines collectes</Text>
+        <View style={styles.scheduleCard}>
+          <View style={styles.scheduleItem}>
+            <View style={[styles.scheduleBadge, { backgroundColor: '#166534' }]} />
+            <View>
+              <Text style={styles.scheduleDay}>Mercredi (aujourd'hui)</Text>
+              <Text style={styles.scheduleType}>🚛 Ordures ménagères</Text>
+            </View>
+            <Text style={styles.scheduleTime}>18h-20h</Text>
+          </View>
+          <View style={styles.scheduleItem}>
+            <View style={[styles.scheduleBadge, { backgroundColor: '#10b981' }]} />
+            <View>
+              <Text style={styles.scheduleDay}>Jeudi</Text>
+              <Text style={styles.scheduleType}>♻️ Recyclage (jaune)</Text>
+            </View>
+            <Text style={styles.scheduleTime}>18h-20h</Text>
+          </View>
+          <View style={styles.scheduleItem}>
+            <View style={[styles.scheduleBadge, { backgroundColor: '#8b5cf6' }]} />
+            <View>
+              <Text style={styles.scheduleDay}>Samedi</Text>
+              <Text style={styles.scheduleType}>🟢 Verre</Text>
+            </View>
+            <Text style={styles.scheduleTime}>10h-12h</Text>
+          </View>
+        </View>
+
+        <TouchableOpacity style={styles.testButton} onPress={testNotification}>
+          <Ionicons name="volume-high" size={20} color="#166534" />
+          <Text style={styles.testButtonText}>🔔 Tester la notification</Text>
+        </TouchableOpacity>
+
+        <Text style={styles.sectionTitle}>Nos services</Text>
+        <View style={styles.servicesGrid}>
+          <TouchableOpacity style={styles.serviceCard} onPress={() => router.push("/map")}>
+            <View style={[styles.serviceIcon, { backgroundColor: '#10b98115' }]}>
+              <Ionicons name="map" size={28} color="#10b981" />
+            </View>
+            <Text style={styles.serviceName}>Voir la carte</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.serviceCard} onPress={() => router.push("/calendrier")}>
+            <View style={[styles.serviceIcon, { backgroundColor: '#3b82f615' }]}>
+              <Ionicons name="calendar" size={28} color="#3b82f6" />
+            </View>
+            <Text style={styles.serviceName}>Calendrier</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.serviceCard} onPress={() => router.push("/guide")}>
+            <View style={[styles.serviceIcon, { backgroundColor: '#f59e0b15' }]}>
+              <Ionicons name="book" size={28} color="#f59e0b" />
+            </View>
+            <Text style={styles.serviceName}>Guide de tri</Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F7FBF7" },
-  header: { flex: 1, justifyContent: "center", alignItems: "center" },
-  leafCircle: { 
-    width: 90, 
-    height: 90, 
-    borderRadius: 45, 
-    backgroundColor: "white", 
-    justifyContent: "center", 
-    alignItems: "center", 
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 10
-  },
-  brandName: { fontSize: 34, fontWeight: "900", color: "#166534", marginTop: 15 },
-  formContainer: { 
-    backgroundColor: "white", 
-    borderTopLeftRadius: 40, 
-    borderTopRightRadius: 40, 
-    padding: 30, 
-    paddingBottom: 40, 
-    elevation: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 20
-  },
-  welcomeText: { fontSize: 28, fontWeight: "800", color: "#1e293b", marginBottom: 20 },
-  inputGroup: { gap: 15, marginBottom: 25 },
-  inputWrapper: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    backgroundColor: "#F1F5F9", 
-    borderRadius: 15, 
-    paddingHorizontal: 15, 
-    height: 60,
-    borderWidth: 1,
-    borderColor: "#E2E8F0"
-  },
-  input: { flex: 1, marginLeft: 12, fontSize: 16, color: "#1e293b" },
-  loginButton: { 
-    backgroundColor: "#166534", 
-    height: 60, 
-    borderRadius: 15, 
-    justifyContent: "center", 
-    alignItems: "center",
-    elevation: 3
-  },
-  loginButtonText: { color: "white", fontSize: 18, fontWeight: "700" }
+  container: { flex: 1, backgroundColor: '#F7FBF7' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
+  greeting: { fontSize: 14, color: '#64748b' },
+  userName: { fontSize: 24, fontWeight: 'bold', color: '#1e293b' },
+  streetText: { fontSize: 12, color: '#64748b', marginTop: 4 },
+  profileButton: { width: 48, height: 48 },
+  profileInitial: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#166534', justifyContent: 'center', alignItems: 'center' },
+  profileInitialText: { color: 'white', fontSize: 20, fontWeight: 'bold' },
+  notifStatusCard: { backgroundColor: '#fff', marginHorizontal: 20, marginTop: 10, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0' },
+  notifStatusHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  notifStatusTitle: { flex: 1, fontSize: 16, fontWeight: '600', color: '#1e293b' },
+  notifStatusText: { fontSize: 13, color: '#64748b' },
+  alertCard: { flexDirection: 'row', backgroundColor: '#f59e0b', margin: 20, borderRadius: 20, padding: 20 },
+  alertIconContainer: { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  alertContent: { flex: 1 },
+  alertTitle: { color: 'white', fontSize: 18, fontWeight: 'bold', marginBottom: 5 },
+  alertDescription: { color: 'rgba(255,255,255,0.9)', fontSize: 13 },
+  lastNotifCard: { backgroundColor: '#f1f5f9', marginHorizontal: 20, marginBottom: 10, padding: 16, borderRadius: 16 },
+  lastNotifLabel: { fontSize: 12, color: '#64748b', marginBottom: 8 },
+  lastNotifText: { fontSize: 14, fontWeight: '500', color: '#1e293b' },
+  lastNotifTime: { fontSize: 11, color: '#94a3b8', marginTop: 4 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#1e293b', marginHorizontal: 20, marginTop: 20, marginBottom: 12 },
+  scheduleCard: { backgroundColor: '#fff', marginHorizontal: 20, borderRadius: 16, padding: 16, gap: 16 },
+  scheduleItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  scheduleBadge: { width: 12, height: 12, borderRadius: 6 },
+  scheduleDay: { fontSize: 14, fontWeight: '500', color: '#1e293b' },
+  scheduleType: { fontSize: 12, color: '#64748b' },
+  scheduleTime: { fontSize: 14, fontWeight: '500', color: '#166534', marginLeft: 'auto' },
+  testButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 20, marginTop: 20, paddingVertical: 12, backgroundColor: '#f0fdf4', borderRadius: 12 },
+  testButtonText: { fontSize: 14, color: '#166534', fontWeight: '500' },
+  servicesGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 15, gap: 15, marginBottom: 30 },
+  serviceCard: { width: '47%', backgroundColor: 'white', borderRadius: 16, padding: 16, alignItems: 'center' },
+  serviceIcon: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  serviceName: { fontSize: 14, fontWeight: '600', color: '#1e293b', textAlign: 'center' },
 });
