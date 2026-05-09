@@ -15,15 +15,16 @@ import { API_URL } from "../services/api";
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const [user, setUser] = useState({
-    name: "Citoyen",
-    email: "citoyen@ecowaste.sn",
-    phone: "+221 77 000 00 00",
-    points: 1250,
-    reportsCount: 12
-  });
-  const [isEditing, setIsEditing] = useState(false);
-
+const [user, setUser] = useState({
+  name: "Citoyen",
+  email: "",
+  phone: "",
+  street: "",
+  points: 0,
+  reportsCount: 0
+});
+const [isEditing, setIsEditing] = useState(false);
+const [loading, setLoading] = useState(true);
   const menuItems = [
     { icon: "notifications-outline", title: "Notifications", color: "#3b82f6", badge: "3" },
     { icon: "shield-checkmark-outline", title: "Confidentialité", color: "#10b981", badge: null },
@@ -31,29 +32,81 @@ export default function ProfileScreen() {
     { icon: "information-circle-outline", title: "À propos", color: "#8b5cf6", badge: null },
     { icon: "star-outline", title: "Évaluer l'application", color: "#ec4897", badge: null },
   ];
-
-  const handleLogout = () => {
-    Alert.alert(
-      "Déconnexion",
-      "Voulez-vous vraiment vous déconnecter ?",
-      [
-        { text: "Annuler", style: "cancel" },
-        { 
-          text: "Se déconnecter", 
-          onPress: () => {
-            // Ici tu peux ajouter une vraie déconnexion
-            router.replace("/");
-          },
-          style: "destructive"
-        }
-      ]
-    );
+// ✅ Ajoute ce useEffect pour charger les vraies données
+useEffect(() => {
+  const fetchUser = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/user`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      setUser({
+        name: data.name || "Citoyen",
+        email: data.email || "",
+        phone: data.telephone || "",
+        street: data.street || "",
+        points: 0,
+        reportsCount: 0
+      });
+    } catch (error) {
+      console.log("Erreur chargement profil:", error);
+    } finally {
+      setLoading(false);
+    }
   };
+  fetchUser();
+}, []);
 
-  const handleUpdateProfile = () => {
-    setIsEditing(false);
-    Alert.alert("Succès", "Profil mis à jour avec succès !");
-  };
+ // ✅ Remplace handleLogout pour vider le token
+const handleLogout = () => {
+  Alert.alert(
+    "Déconnexion",
+    "Voulez-vous vraiment vous déconnecter ?",
+    [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Se déconnecter",
+        onPress: async () => {
+          try {
+            const token = localStorage.getItem('token');
+            await fetch(`${API_URL}/logout`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+          } catch (e) {}
+          localStorage.removeItem('token'); // ← supprime le token
+          router.replace('/register');       // ← redirige vers login
+        },
+        style: "destructive"
+      }
+    ]
+  );
+};
+
+  // ✅ Remplace handleUpdateProfile pour vraiment sauvegarder
+const handleUpdateProfile = async () => {
+  try {
+    const token = localStorage.getItem('token');
+    const response = await fetch(`${API_URL}/user/update`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        name: user.name,
+        telephone: user.phone,
+      })
+    });
+    if (response.ok) {
+      setIsEditing(false);
+      Alert.alert("✅ Succès", "Profil mis à jour !");
+    }
+  } catch (error) {
+    Alert.alert("Erreur", "Impossible de mettre à jour le profil");
+  }
+};
 
   return (
     <SafeAreaView style={styles.container}>

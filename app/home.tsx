@@ -223,13 +223,7 @@ export default function HomeScreen() {
     </SafeAreaView>
   );
 }
-const services = [
-  { id: 1, name: "Points de collecte", icon: "map", color: "#10b981", route: "/map" },
-  { id: 2, name: "Horaires", icon: "time", color: "#3b82f6", route: "/calendrier" },
-  { id: 3, name: "Guide de tri", icon: "book", color: "#f59e0b", route: "/guide" },
-  { id: 4, name: "Mes points", icon: "star", color: "#8b5cf6", route: "/points" },
-  { id: 5, name: "Mode Agent", icon: "business", color: "#ef4444", route: "/driver" }, // ← Ajouter ceci
-];
+
 
 const styles = StyleSheet.create({
   container: {

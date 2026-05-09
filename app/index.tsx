@@ -1,7 +1,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react"; // ← ajouter useRef
 import {
   SafeAreaView,
   StyleSheet,
@@ -42,100 +42,154 @@ export default function HomeScreen() {
   const [isCollecting, setIsCollecting] = useState(false);
   const [street, setStreet] = useState<string | null>(null);
 
-  // Setup des notifications Expo + écouteurs
-  useEffect(() => {
-    const setup = async () => {
-      // 1. Permission notifications web
-      if (typeof window !== 'undefined' && 'Notification' in window) {
-        const permission = await Notification.requestPermission();
-        setNotificationsEnabled(permission === 'granted');
-        if (permission === 'granted') console.log("🔔 Notifications web autorisées");
-      }
+  const streetRef = useRef<string | null>(null); // ← ajouter cette ligne
+
+// Remplace le useEffect complet par celui-ci :
+useEffect(() => {
+  const setup = async () => {
+    // 1. Permission notifications web
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const permission = await Notification.requestPermission();
+      setNotificationsEnabled(permission === 'granted');
+      if (permission === 'granted') console.log("🔔 Notifications web autorisées");
+    }
+
+    // 2. Récupérer la rue de l'utilisateur
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_URL}/user`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await response.json();
+      console.log("👤 Données user complètes:", data); // ← debug
       
-      // 2. Récupérer la rue de l'utilisateur
-      try {
-        const token = localStorage.getItem('token');
-        const response = await fetch(`${API_URL}/user`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await response.json();
-        if (data.street) {
-          setStreet(data.street);
-          console.log("📍 Rue du citoyen:", data.street);
-        }
-      } catch (error) {
-        console.log("Erreur récupération rue:", error);
+      if (data.street) {
+        setStreet(data.street);
+        streetRef.current = data.street; // ← synchronise le ref immédiatement
+        console.log("📍 Rue du citoyen:", data.street);
+      } else {
+        // Bug #3 : avertir explicitement si street est absent
+        console.warn("⚠️ Aucune rue associée à cet utilisateur (user.street est null)");
+        console.warn("👉 Assigne une rue via POST /api/assign-street depuis le profil");
       }
-      
-      // 3. Enregistrer le token Expo (push)
-      const expoToken = await registerForPushNotificationsAsync();
-      if (expoToken) {
-        console.log('📱 Push token Expo:', expoToken);
-        await savePushToken(expoToken);
+    } catch (error) {
+      console.log("Erreur récupération rue:", error);
+    }
+
+    // 3. Enregistrer le token Expo (push)
+    const expoToken = await registerForPushNotificationsAsync();
+    if (expoToken) {
+      console.log('📱 Push token Expo:', expoToken);
+      await savePushToken(expoToken);
+    }
+  };
+
+  setup();
+
+  // 4. Polling — utilise streetRef.current au lieu de street
+  //    pour éviter la closure stale (Bug #1)
+  const interval = setInterval(async () => {
+    try {
+      const response = await fetch(`${API_URL}/check-alerte`);
+      const data = await response.json();
+
+console.log("👤 Données user complètes:", data);
+
+// ✅ Charge le nom
+if (data.name) setUserName(data.name.split(' ')[0]);
+
+// Redirection driver
+if (data.role === 'driver') {
+  router.replace('/driver');
+  return;
+}
+
+// Charge la rue
+if (data.street) {
+  setStreet(data.street);
+  streetRef.current = data.street;
+  console.log("📍 Rue du citoyen:", data.street);
+}
+
+      // Debug complet à chaque poll
+      console.log("📡 Polling alerte:", data);
+      console.log("📍 Rue (ref):", streetRef.current); // ← ref, toujours à jour
+
+      if (!streetRef.current) {
+        console.warn("⚠️ street non définie, comparaison impossible");
+        return;
       }
-    };
-    
-    setup();
-    
-    // 4. Démarrer le polling
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch(`${API_URL}/check-alerte`);
-        const data = await response.json();
-        console.log("📡 Polling alerte:", data);
-        console.log("📍 Rue stockée:", street);
-        
-        if (data.actif && data.zone === street) {
-          console.log("🚛 ALERTE ! Le camion est dans votre rue !");
-          Alert.alert(
-            "🚛 Collecte en cours !",
-            `Les éboueurs sont dans ${data.zone}. Sortez vos poubelles !`
-          );
-          if (Notification.permission === 'granted') {
-            new Notification("🚛 Collecte en cours", {
-              body: `Les éboueurs sont dans ${data.zone}. Sortez vos poubelles !`
+
+      // Comparaison insensible à la casse et aux espaces (Bug #2 partiel)
+      const zoneNormalisee = data.zone?.trim().toLowerCase();
+      const streetNormalisee = streetRef.current?.trim().toLowerCase();
+
+      console.log(`🔎 Comparaison: "${zoneNormalisee}" === "${streetNormalisee}" → ${zoneNormalisee === streetNormalisee}`);
+
+      if (data.actif && zoneNormalisee === streetNormalisee) {
+        console.log("🚛 ALERTE ! Le camion est dans votre rue !");
+
+        // Évite les alertes répétées si déjà en cours
+        setIsCollecting(prev => {
+          if (!prev) {
+            Alert.alert(
+              "🚛 Collecte en cours !",
+              `Les éboueurs sont dans ${data.zone}. Sortez vos poubelles !`
+            );
+            if (
+              typeof window !== 'undefined' &&
+              'Notification' in window &&
+              Notification.permission === 'granted'
+            ) {
+              new Notification("🚛 Collecte en cours", {
+                body: `Les éboueurs sont dans ${data.zone}. Sortez vos poubelles !`
+              });
+            }
+            setLastNotification({
+              zone: data.zone,
+              type: 'arrivee',
+              time: "À l'instant"
             });
           }
-          setIsCollecting(true);
-          setLastNotification({
-            zone: data.zone,
-            type: 'arrivee',
-            time: "À l'instant"
-          });
-        }
-      } catch (error) {
-        console.log("Erreur polling:", error);
-      }
-    }, 5000);
-    
-    // 5. Écouteurs de notifications reçues (Expo)
-    const notificationListener = Notifications.addNotificationReceivedListener(notification => {
-      console.log('📱 Notification Expo reçue:', notification);
-      const title = notification.request.content.title ?? 'Notification';
-      const body = notification.request.content.body ?? '';
-      Alert.alert(title, body);
-      if (title && title.includes('Collecte en cours')) {
-        setIsCollecting(true);
-        const dataStreet = notification.request.content.data?.street;
-        setLastNotification({
-          zone: typeof dataStreet === 'string' ? dataStreet : 'Votre rue',
-          type: 'arrivee',
-          time: 'À l\'instant'
+          return true;
         });
+
+      } else if (!data.actif) {
+        // Remet à false quand le chauffeur termine
+        setIsCollecting(false);
       }
-    });
-    
-    const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
-      console.log('🔔 Notification cliquée:', response);
-    });
-    
-    // Nettoyage
-    return () => {
-      clearInterval(interval);
-      notificationListener.remove();
-      responseListener.remove();
-    };
-  }, []); // Le tableau de dépendances vide garantit une exécution unique
+
+    } catch (error) {
+      console.log("Erreur polling:", error);
+    }
+  }, 5000);
+ // 5. Écouteurs Expo — inchangés
+  const notificationListener = Notifications.addNotificationReceivedListener(notification => {
+    console.log('📱 Notification Expo reçue:', notification);
+    const title = notification.request.content.title ?? 'Notification';
+    const body = notification.request.content.body ?? '';
+    Alert.alert(title, body);
+    if (title && title.includes('Collecte en cours')) {
+      setIsCollecting(true);
+      const dataStreet = notification.request.content.data?.street;
+      setLastNotification({
+        zone: typeof dataStreet === 'string' ? dataStreet : 'Votre rue',
+        type: 'arrivee',
+        time: "À l'instant"
+      });
+    }
+  });
+
+  const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+    console.log('🔔 Notification cliquée:', response);
+  });
+
+  return () => {
+    clearInterval(interval);
+    notificationListener.remove();
+    responseListener.remove();
+  };
+}, []); // tableau vide intentionnel — streetRef évite la closure stale
 
   // Fonction pour tester les notifications
   const testNotification = () => {
