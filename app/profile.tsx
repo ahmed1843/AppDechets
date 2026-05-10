@@ -9,104 +9,124 @@ import {
   View, 
   ScrollView,
   Alert,
-  TextInput
+  TextInput,
+  Platform 
 } from "react-native";
 import { API_URL } from "../services/api";
 
 export default function ProfileScreen() {
   const router = useRouter();
-const [user, setUser] = useState({
-  name: "Citoyen",
-  email: "",
-  phone: "",
-  street: "",
-  points: 0,
-  reportsCount: 0
-});
-const [isEditing, setIsEditing] = useState(false);
-const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState({
+    name: "Citoyen",
+    email: "",
+    phone: "",
+    street: "",
+    points: 0,
+    reportsCount: 0
+  });
+  const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // ✅ Routes ajoutées pour rendre le menu cliquable
   const menuItems = [
-    { icon: "notifications-outline", title: "Notifications", color: "#3b82f6", badge: "3" },
-    { icon: "shield-checkmark-outline", title: "Confidentialité", color: "#10b981", badge: null },
-    { icon: "help-circle-outline", title: "Aide et support", color: "#f59e0b", badge: null },
-    { icon: "information-circle-outline", title: "À propos", color: "#8b5cf6", badge: null },
-    { icon: "star-outline", title: "Évaluer l'application", color: "#ec4897", badge: null },
+    { icon: "notifications-outline", title: "Notifications", color: "#3b82f6", badge: "3", route: "/notifications" },
+    { icon: "shield-checkmark-outline", title: "Confidentialité", color: "#10b981", badge: null, route: "/privacy" },
+    { icon: "help-circle-outline", title: "Aide et support", color: "#f59e0b", badge: null, route: "/support" },
+    { icon: "information-circle-outline", title: "À propos", color: "#8b5cf6", badge: null, route: "/about" },
+    { icon: "star-outline", title: "Évaluer l'application", color: "#ec4897", badge: null, route: null },
   ];
-// ✅ Ajoute ce useEffect pour charger les vraies données
-useEffect(() => {
+
+  useEffect(() => {
+    fetchUser();
+  }, []);
+
   const fetchUser = async () => {
     try {
-      const token = localStorage.getItem('token');
+      // Correction Bug : localStorage est pour le Web, on vérifie la plateforme
+      const token = Platform.OS === 'web' ? localStorage.getItem('token') : "VOTRE_LOGIQUE_TOKEN_MOBILE"; 
+      
       const response = await fetch(`${API_URL}/user`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      setUser({
-        name: data.name || "Citoyen",
-        email: data.email || "",
-        phone: data.telephone || "",
-        street: data.street || "",
-        points: 0,
-        reportsCount: 0
-      });
+      
+      if (response.ok) {
+        setUser({
+          name: data.name || "Citoyen",
+          email: data.email || "",
+          phone: data.telephone || "",
+          street: data.street || "",
+          points: data.points || 0,
+          reportsCount: data.reports_count || 0
+        });
+      }
     } catch (error) {
       console.log("Erreur chargement profil:", error);
     } finally {
       setLoading(false);
     }
   };
-  fetchUser();
-}, []);
 
- // ✅ Remplace handleLogout pour vider le token
 const handleLogout = () => {
-  Alert.alert(
-    "Déconnexion",
-    "Voulez-vous vraiment vous déconnecter ?",
-    [
-      { text: "Annuler", style: "cancel" },
-      {
-        text: "Se déconnecter",
-        onPress: async () => {
-          try {
-            const token = localStorage.getItem('token');
-            await fetch(`${API_URL}/logout`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-          } catch (e) {}
-          localStorage.removeItem('token'); // ← supprime le token
-          router.replace('/register');       // ← redirige vers login
-        },
-        style: "destructive"
+  // Fonction de déconnexion réelle
+  const performLogout = async () => {
+    try {
+      const token = Platform.OS === 'web' ? localStorage.getItem('token') : null;
+      if (token) {
+        await fetch(`${API_URL}/logout`, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          }
+        });
       }
-    ]
-  );
-};
-
-  // ✅ Remplace handleUpdateProfile pour vraiment sauvegarder
-const handleUpdateProfile = async () => {
-  try {
-    const token = localStorage.getItem('token');
-    const response = await fetch(`${API_URL}/user/update`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        name: user.name,
-        telephone: user.phone,
-      })
-    });
-    if (response.ok) {
-      setIsEditing(false);
-      Alert.alert("✅ Succès", "Profil mis à jour !");
+    } catch (e) {
+      console.log("Erreur serveur logout");
+    } finally {
+      if (Platform.OS === 'web') localStorage.removeItem('token');
+      router.replace('/register');
     }
-  } catch (error) {
-    Alert.alert("Erreur", "Impossible de mettre à jour le profil");
+  };
+
+  // ✅ Correction pour le WEB : Alert.alert ne marche pas sur navigateur
+  if (Platform.OS === 'web') {
+    const confirmWeb = window.confirm("Voulez-vous vraiment vous déconnecter ?");
+    if (confirmWeb) performLogout();
+  } else {
+    // Version Mobile
+    Alert.alert(
+      "Déconnexion",
+      "Voulez-vous vraiment vous déconnecter ?",
+      [
+        { text: "Annuler", style: "cancel" },
+        { text: "Se déconnecter", onPress: performLogout, style: "destructive" }
+      ]
+    );
   }
 };
+  const handleUpdateProfile = async () => {
+    try {
+      const token = Platform.OS === 'web' ? localStorage.getItem('token') : "";
+      const response = await fetch(`${API_URL}/user/update`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: user.name,
+          telephone: user.phone,
+        })
+      });
+      if (response.ok) {
+        setIsEditing(false);
+        Alert.alert("✅ Succès", "Profil mis à jour !");
+      }
+    } catch (error) {
+      Alert.alert("Erreur", "Impossible de mettre à jour le profil");
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -121,7 +141,6 @@ const handleUpdateProfile = async () => {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Section avatar et infos */}
         <View style={styles.profileCard}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
@@ -135,41 +154,42 @@ const handleUpdateProfile = async () => {
           </View>
 
           {isEditing ? (
-            <View style={styles.editForm}>
-              <TextInput
-                style={styles.input}
-                value={user.name}
-                onChangeText={(text) => setUser({...user, name: text})}
-                placeholder="Nom complet"
-              />
-              <TextInput
-                style={styles.input}
-                value={user.email}
-                onChangeText={(text) => setUser({...user, email: text})}
-                placeholder="Email"
-                keyboardType="email-address"
-              />
-              <TextInput
-                style={styles.input}
-                value={user.phone}
-                onChangeText={(text) => setUser({...user, phone: text})}
-                placeholder="Téléphone"
-                keyboardType="phone-pad"
-              />
-              <TouchableOpacity style={styles.saveButton} onPress={handleUpdateProfile}>
-                <Text style={styles.saveButtonText}>Enregistrer</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <>
-              <Text style={styles.userName}>{user.name}</Text>
-              <Text style={styles.userEmail}>{user.email}</Text>
-              <Text style={styles.userPhone}>{user.phone}</Text>
-            </>
-          )}
+  <View style={styles.editForm}>
+    <TextInput
+      style={styles.input}
+      value={user.name}
+      onChangeText={(text) => setUser({...user, name: text})}
+      placeholder="Nom complet"
+    />
+    
+    <TextInput
+      style={[styles.input, { opacity: 0.6 }]} // Fusion des styles ici
+      value={user.email}
+      editable={false} 
+      placeholder="Email"
+    />
+    
+    <TextInput
+      style={styles.input}
+      value={user.phone}
+      onChangeText={(text) => setUser({...user, phone: text})}
+      placeholder="Téléphone"
+      keyboardType="phone-pad"
+    />
+    
+    <TouchableOpacity style={styles.saveButton} onPress={handleUpdateProfile}>
+      <Text style={styles.saveButtonText}>Enregistrer</Text>
+    </TouchableOpacity>
+  </View>
+) : (
+  <>
+    <Text style={styles.userName}>{user.name}</Text>
+    <Text style={styles.userEmail}>{user.email}</Text>
+    <Text style={styles.userPhone}>{user.phone || "Non renseigné"}</Text>
+  </>
+)}
         </View>
 
-        {/* Stats */}
         <View style={styles.statsContainer}>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{user.points}</Text>
@@ -187,11 +207,14 @@ const handleUpdateProfile = async () => {
           </View>
         </View>
 
-        {/* Menu */}
         <View style={styles.menuSection}>
           <Text style={styles.menuTitle}>Paramètres</Text>
           {menuItems.map((item, index) => (
-            <TouchableOpacity key={index} style={styles.menuItem}>
+            <TouchableOpacity 
+              key={index} 
+              style={styles.menuItem}
+              onPress={() => item.route ? router.push(item.route as any) : Alert.alert("Bientôt", "Disponible prochainement")}
+            >
               <View style={[styles.menuIcon, { backgroundColor: `${item.color}15` }]}>
                 <Ionicons name={item.icon as any} size={22} color={item.color} />
               </View>
@@ -206,7 +229,6 @@ const handleUpdateProfile = async () => {
           ))}
         </View>
 
-        {/* Version et déconnexion */}
         <View style={styles.footer}>
           <Text style={styles.versionText}>Version 1.0.0</Text>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
@@ -214,196 +236,42 @@ const handleUpdateProfile = async () => {
             <Text style={styles.logoutText}>Se déconnecter</Text>
           </TouchableOpacity>
         </View>
-
         <View style={{ height: 30 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+// ✅ TES STYLES (STRICTEMENT IDENTIQUES)
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#F7FBF7' 
-  },
-  header: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    padding: 20,
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  title: { 
-    fontSize: 18, 
-    fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  profileCard: {
-    backgroundColor: 'white',
-    margin: 16,
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-  },
-  avatarContainer: {
-    position: 'relative',
-    marginBottom: 16,
-  },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#dcfce7',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  editAvatar: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#166534',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  userName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1e293b',
-    marginTop: 8,
-  },
-  userEmail: {
-    fontSize: 14,
-    color: '#64748b',
-    marginTop: 4,
-  },
-  userPhone: {
-    fontSize: 14,
-    color: '#64748b',
-    marginTop: 2,
-  },
-  editForm: {
-    width: '100%',
-    marginTop: 16,
-  },
-  input: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 15,
-    marginBottom: 12,
-  },
-  saveButton: {
-    backgroundColor: '#166534',
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  saveButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    marginHorizontal: 16,
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 16,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#166534',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 4,
-  },
-  statDivider: {
-    width: 1,
-    backgroundColor: '#e2e8f0',
-  },
-  menuSection: {
-    backgroundColor: 'white',
-    marginHorizontal: 16,
-    borderRadius: 20,
-    padding: 8,
-    marginBottom: 16,
-  },
-  menuTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-  },
-  menuIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  menuText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#1e293b',
-  },
-  badge: {
-    backgroundColor: '#ef4444',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginRight: 8,
-  },
-  badgeText: {
-    color: 'white',
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  footer: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 20,
-    alignItems: 'center',
-  },
-  versionText: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginBottom: 16,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 16,
-    backgroundColor: 'white',
-    borderRadius: 16,
-    width: '100%',
-    justifyContent: 'center',
-  },
-  logoutText: {
-    fontSize: 16,
-    color: '#ef4444',
-    fontWeight: '500',
-  },
+  container: { flex: 1, backgroundColor: '#F7FBF7' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
+  title: { fontSize: 18, fontWeight: 'bold', color: '#1e293b' },
+  profileCard: { backgroundColor: 'white', margin: 16, borderRadius: 24, padding: 24, alignItems: 'center' },
+  avatarContainer: { position: 'relative', marginBottom: 16 },
+  avatar: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#dcfce7', justifyContent: 'center', alignItems: 'center' },
+  editAvatar: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#166534', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  userName: { fontSize: 20, fontWeight: 'bold', color: '#1e293b', marginTop: 8 },
+  userEmail: { fontSize: 14, color: '#64748b', marginTop: 4 },
+  userPhone: { fontSize: 14, color: '#64748b', marginTop: 2 },
+  editForm: { width: '100%', marginTop: 16 },
+  input: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 14, fontSize: 15, marginBottom: 12 },
+  saveButton: { backgroundColor: '#166534', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8 },
+  saveButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
+  statsContainer: { flexDirection: 'row', backgroundColor: 'white', marginHorizontal: 16, borderRadius: 20, padding: 16, marginBottom: 16 },
+  statItem: { flex: 1, alignItems: 'center' },
+  statValue: { fontSize: 22, fontWeight: 'bold', color: '#166534' },
+  statLabel: { fontSize: 12, color: '#64748b', marginTop: 4 },
+  statDivider: { width: 1, backgroundColor: '#e2e8f0' },
+  menuSection: { backgroundColor: 'white', marginHorizontal: 16, borderRadius: 20, padding: 8, marginBottom: 16 },
+  menuTitle: { fontSize: 16, fontWeight: '600', color: '#1e293b', paddingHorizontal: 12, paddingVertical: 12 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12 },
+  menuIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  menuText: { flex: 1, fontSize: 15, color: '#1e293b' },
+  badge: { backgroundColor: '#ef4444', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 2, marginRight: 8 },
+  badgeText: { color: 'white', fontSize: 11, fontWeight: 'bold' },
+  footer: { marginHorizontal: 16, marginTop: 8, marginBottom: 20, alignItems: 'center' },
+  versionText: { fontSize: 12, color: '#94a3b8', marginBottom: 16 },
+  logoutButton: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, backgroundColor: 'white', borderRadius: 16, width: '100%', justifyContent: 'center' },
+  logoutText: { fontSize: 16, color: '#ef4444', fontWeight: '500' },
 });

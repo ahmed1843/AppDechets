@@ -231,7 +231,7 @@ export default function RegisterScreen() {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.loginLink} onPress={() => router.push("/")}>
+           <TouchableOpacity style={styles.loginLink} onPress={() => router.push("/login")}>
               <Text style={styles.loginLinkText}>
                 Déjà membre ? <Text style={{fontWeight: 'bold', color: COLORS.primary}}>Se connecter</Text>
               </Text>
