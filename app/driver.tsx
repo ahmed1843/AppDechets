@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   SafeAreaView,
   StyleSheet,
@@ -9,168 +9,142 @@ import {
   View,
   ActivityIndicator,
   Alert,
-  ScrollView
+  ScrollView,
 } from "react-native";
+import * as Location from 'expo-location';
 
-// Plus besoin de modifier cette ligne quand tu changes de Wifi !
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
-
+// ✅ IP en dur (le .env ne se charge qu'au démarrage complet)
+const API_URL = "http://192.168.1.12:8000/api";
 
 export default function DriverScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [currentZone, setCurrentZone] = useState<string | null>("Plateau");
   const [isCollecting, setIsCollecting] = useState(false);
-  const [startTime, setStartTime] = useState<Date | null>(null);
-  
-  // ✅ Vraies zones (Plateau, Almadies, Médina)
+  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+
   const [zones, setZones] = useState([
     { id: 1, name: "Plateau", habitants: 45, status: "pending" },
     { id: 2, name: "Almadies", habitants: 58, status: "pending" },
     { id: 3, name: "Médina", habitants: 63, status: "pending" },
   ]);
 
-  // Fonction pour envoyer la notification
-  const sendNotification = async (street: string, action: string) => {
-    const token = localStorage.getItem('token');
-    console.log("📤 Envoi notification à:", `${API_URL}/notify-street`);
-    console.log("🔑 Token:", token);
-    console.log("📦 Body:", { street, action });
-    
-    try {
-      const response = await fetch(`${API_URL}/notify-street`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({ street, action })
-      });
-      
-      const data = await response.json();
-      console.log("📥 Réponse:", data);
-      
-      if (response.ok) {
-        return { success: true, notified: data.notified };
-      } else {
-        return { success: false, error: data.error || data.message };
+  // ✅ Démarrer le suivi GPS avec expo-location (fonctionne sur iPhone)
+  const startTracking = async () => {
+    console.log("Démarrage du tracking GPS...");
+
+    // Demander la permission
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission refusée', 'Le GPS est nécessaire pour le suivi de collecte.');
+      return;
+    }
+
+    // Lancer le watch
+    locationSubscription.current = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.High,
+        timeInterval: 5000,
+        distanceInterval: 10,
+      },
+      (location) => {
+        const { latitude, longitude } = location.coords;
+        console.log("📍 Position captée :", latitude, longitude);
+
+        fetch(`${API_URL}/alerte-chauffeur`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            zone_name: currentZone,
+            actif: true,
+            current_lat: latitude,
+            current_lng: longitude,
+          }),
+        })
+        .then(() => console.log("✅ Serveur mis à jour"))
+        .catch(err => console.log("❌ Erreur fetch GPS:", err));
       }
-    } catch (error) {
-      console.error("❌ Erreur réseau:", error);
-      return { success: false, error: "Impossible de contacter le serveur" };
+    );
+  };
+
+  // ✅ Arrêter le suivi GPS
+  const stopTracking = () => {
+    if (locationSubscription.current !== null) {
+      locationSubscription.current.remove();
+      locationSubscription.current = null;
+      console.log("🛑 Tracking GPS arrêté.");
     }
   };
 
-const handleArrival = () => {
-  if (!currentZone) return;
+  useEffect(() => {
+    return () => stopTracking();
+  }, []);
 
-  Alert.alert(
-    "🚛 Envoyer l'alerte ?",
-    `Les habitants de ${currentZone} seront prévenus`,
-    [
-      { text: "Annuler", style: "cancel" },
-      {
-        text: "✅ Envoyer",
-        onPress: async () => {
-          try {
-            setLoading(true);
+  const handleArrival = async () => {
+    console.log("Tentative de démarrage...");
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/alerte-chauffeur`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          zone_name: currentZone,
+          actif: true,
+        }),
+      });
 
-            // Active l'alerte côté Laravel
-            const response = await fetch(`${API_URL}/alerte-chauffeur`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                zone_name: currentZone,
-                actif: true,
-              }),
-            });
+      if (response.ok) {
+        setIsCollecting(true);
+        await startTracking();
+        console.log("Collecte activée avec succès !");
+      }
+    } catch (error) {
+      console.error("Erreur au clic :", error);
+      Alert.alert("Erreur", "Impossible de contacter le serveur.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-            const data = await response.json();
+  // ✅ Alert.alert à la place de window.confirm (fonctionne sur iPhone)
+  const handleDeparture = () => {
+    if (!currentZone) return;
 
-            console.log("✅ Alerte envoyée :", data);
+    Alert.alert(
+      "Terminer la collecte",
+      `Terminer la collecte dans ${currentZone} ?`,
+      [
+        { text: "Annuler", style: "cancel" },
+        { text: "Terminer", style: "destructive", onPress: finishCollection },
+      ]
+    );
+  };
 
-            setIsCollecting(true);
+  const finishCollection = async () => {
+    try {
+      setLoading(true);
+      stopTracking();
 
-            setZones(prev =>
-              prev.map(z =>
-                z.name === currentZone
-                  ? { ...z, status: "en_cours" }
-                  : z
-              )
-            );
+      await fetch(`${API_URL}/alerte-chauffeur`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          zone_name: currentZone,
+          actif: false,
+        }),
+      });
 
-            Alert.alert(
-              "🚛 Collecte démarrée",
-              `Notification envoyée pour ${currentZone}`
-            );
-          } catch (error) {
-            console.log(error);
-
-            Alert.alert(
-              "Erreur",
-              "Impossible d'envoyer l'alerte"
-            );
-          } finally {
-            setLoading(false);
-          }
-        },
-      },
-    ]
-  );
-};
-
-const handleDeparture = () => {
-  if (!currentZone) return;
-
-  Alert.alert(
-    "🏁 Fin de collecte ?",
-    `Terminer la collecte dans ${currentZone}`,
-    [
-      { text: "Annuler", style: "cancel" },
-      {
-        text: "✅ Terminer",
-        onPress: async () => {
-          try {
-            setLoading(true);
-
-            await fetch(`${API_URL}/alerte-chauffeur`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                zone_name: currentZone,
-                actif: false,
-              }),
-            });
-
-            setIsCollecting(false);
-
-            setZones(prev =>
-              prev.map(z =>
-                z.name === currentZone
-                  ? { ...z, status: "termine" }
-                  : z
-              )
-            );
-
-            Alert.alert(
-              "✅ Collecte terminée",
-              `${currentZone} terminé`
-            );
-          } catch (error) {
-            console.log(error);
-          } finally {
-            setLoading(false);
-          }
-        },
-      },
-    ]
-  );
-};
+      setIsCollecting(false);
+      setZones(prev =>
+        prev.map(z => z.name === currentZone ? { ...z, status: "termine" } : z)
+      );
+    } catch (error) {
+      console.log(error);
+      Alert.alert("Erreur", "Impossible de contacter le serveur.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getZoneStatusColor = (status: string) => {
     switch(status) {
@@ -184,7 +158,7 @@ const handleDeparture = () => {
     return (
       <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#166534" />
-        <Text style={styles.loadingText}>Envoi de l'alerte...</Text>
+        <Text style={styles.loadingText}>Mise à jour du système...</Text>
       </SafeAreaView>
     );
   }
@@ -192,10 +166,9 @@ const handleDeparture = () => {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        
         <View style={styles.header}>
           <Text style={styles.headerTitle}>🚛 Mode Collecte</Text>
-          <TouchableOpacity onPress={() => router.replace("/")}>
+          <TouchableOpacity onPress={() => { stopTracking(); router.replace("/"); }}>
             <Ionicons name="log-out" size={24} color="#94a3b8" />
           </TouchableOpacity>
         </View>
@@ -215,13 +188,10 @@ const handleDeparture = () => {
                 currentZone === zone.name && styles.zoneCardSelected,
                 zone.status === 'termine' && styles.zoneCardCompleted
               ]}
-              onPress={() => setCurrentZone(zone.name)}
+              onPress={() => !isCollecting && setCurrentZone(zone.name)}
             >
               <View style={styles.zoneInfo}>
-                <Text style={[
-                  styles.zoneName,
-                  currentZone === zone.name && styles.zoneNameSelected
-                ]}>
+                <Text style={[styles.zoneName, currentZone === zone.name && styles.zoneNameSelected]}>
                   {zone.name}
                 </Text>
                 <Text style={styles.zoneHabitants}>
@@ -240,17 +210,16 @@ const handleDeparture = () => {
             <TouchableOpacity style={styles.actionButton} onPress={handleArrival}>
               <Ionicons name="notifications" size={48} color="#fff" />
               <Text style={styles.actionButtonTitle}>Je suis arrivé</Text>
-              <Text style={styles.actionButtonSubtitle}>dans {currentZone}</Text>
+              <Text style={styles.actionButtonSubtitle}>Activer le suivi GPS dans {currentZone}</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity style={[styles.actionButton, styles.actionButtonActive]} onPress={handleDeparture}>
               <Ionicons name="checkmark-circle" size={48} color="#fff" />
               <Text style={styles.actionButtonTitle}>Collecte terminée</Text>
-              <Text style={styles.actionButtonSubtitle}>{currentZone} ✓</Text>
+              <Text style={styles.actionButtonSubtitle}>Arrêter le GPS pour {currentZone} ✓</Text>
             </TouchableOpacity>
           )
         )}
-
       </ScrollView>
     </SafeAreaView>
   );

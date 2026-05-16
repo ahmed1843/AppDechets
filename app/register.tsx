@@ -230,6 +230,12 @@ export default function RegisterScreen() {
                 </>
               )}
             </TouchableOpacity>
+<TouchableOpacity 
+  style={styles.forgotLink} 
+  onPress={() => router.push('/forgot-password')}
+>
+  <Text style={styles.forgotText}>Mot de passe oublié ?</Text>
+</TouchableOpacity>
 
            <TouchableOpacity style={styles.loginLink} onPress={() => router.push("/login")}>
               <Text style={styles.loginLinkText}>
@@ -245,6 +251,8 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
+forgotLink: { marginTop: 12, alignItems: 'center' },
+forgotText: { color: '#166534', fontSize: 14 },
   container: { flex: 1, backgroundColor: COLORS.bg },
   header: { alignItems: "center", padding: 30, paddingTop: 50 },
   backBtn: { position: 'absolute', left: 20, top: 50, zIndex: 10 },

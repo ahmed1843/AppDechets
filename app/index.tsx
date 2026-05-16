@@ -1,240 +1,213 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import {
   SafeAreaView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
+  TouchableOpacity,
   ScrollView,
-  Alert,
-  Switch,
   Platform,
-  RefreshControl
+  Image,
 } from "react-native";
-import * as Notifications from 'expo-notifications';
-import * as Haptics from 'expo-haptics'; // Pour l'effet de vibration
-import { registerForPushNotificationsAsync, savePushToken } from '../services/notifications';
-import API_URL from "../services/api";
+import { Ionicons } from '@expo/vector-icons';
+
+
+const API_URL = "http://192.168.1.12:8000/api";
 
 export default function HomeScreen() {
   const router = useRouter();
-  
-  // --- ÉTATS (STATES) ---
-  const [userName, setUserName] = useState("Citoyen");
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [isCollecting, setIsCollecting] = useState(false);
-  const [street, setStreet] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const streetRef = useRef<string | null>(null);
-
-  // --- LOGIQUE DE CHARGEMENT ---
-  const loadUserData = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/user`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await response.json();
-      if (data.name) setUserName(data.name.split(' ')[0]);
-      if (data.street) {
-        setStreet(data.street);
-        streetRef.current = data.street;
-      }
-    } catch (error) {
-      console.log("Erreur chargement profil:", error);
-    }
-  };
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await loadUserData(); // On recharge les infos de la rue et du nom
-    setRefreshing(false);
-  }, []);
+  const [alertActive, setAlertActive] = useState(false);
+  const [truckZone, setTruckZone] = useState<string | null>(null);
+  const [hoveredCard, setHoveredCard] = useState<number | null>(null);
 
   useEffect(() => {
-    loadUserData();
-
-    // Polling du camion
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch(`${API_URL}/check-alerte`);
-        const data = await response.json();
-        const zoneNormalisee = data.zone?.trim().toLowerCase();
-        const streetNormalisee = streetRef.current?.trim().toLowerCase();
-
-        if (data.actif && zoneNormalisee === streetNormalisee) {
-          setIsCollecting(true);
-        } else if (!data.actif) {
-          setIsCollecting(false);
-        }
-      } catch (error) {
-        console.log("Erreur polling:", error);
-      }
-    }, 5000);
-
+    checkTruckStatus();
+    const interval = setInterval(checkTruckStatus, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  // --- ACTIONS ---
-  const handleQuickReport = () => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  const checkTruckStatus = async () => {
+    try {
+      const response = await fetch(`${API_URL}/check-alerte`);
+      const data = await response.json();
+      if (data.actif) {
+        setAlertActive(true);
+        setTruckZone(data.zone);
+      } else {
+        setAlertActive(false);
+        setTruckZone(null);
+      }
+    } catch (e) {
+      console.error("Erreur statut camion:", e);
     }
-    router.push("/report");
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView 
+      <ScrollView
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#166534']} />
-        }
+        contentContainerStyle={styles.scrollContent}
       >
-        
-        {/* 1. HEADER */}
+        {/* --- HEADER --- */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Bonjour 👋</Text>
-            <Text style={styles.userName}>{userName}</Text>
-            {street && <Text style={styles.streetText}>📍 {street}</Text>}
+          <View style={styles.logoContainer}>
+            <Image
+              source={require('../assets/logo/Logo de MMD Smart Clean.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
           </View>
-          <TouchableOpacity style={styles.profileButton} onPress={() => router.push("/profile")}>
-            <View style={styles.profileInitial}>
-              <Text style={styles.profileInitialText}>{userName.charAt(0)}</Text>
+          <TouchableOpacity style={styles.profileContainer} onPress={() => router.push('/profile')}>
+            <Text style={styles.profileName}>Cavani</Text>
+            <View style={styles.profileCircle}>
+              <Text style={styles.profileLetter}>C</Text>
             </View>
           </TouchableOpacity>
         </View>
 
-        {/* 2. RÉCAPITULATIF SEMAINE (Nouveau) */}
-        <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>📊 Cette semaine dans votre zone</Text>
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryItem}>
-              <Ionicons name="checkmark-circle" size={18} color="#22c55e" />
-              <Text style={styles.summaryText}>3 signalements résolus</Text>
+        {/* --- BANNIÈRE IMAGE --- */}
+        <View style={styles.bannerContainer}>
+          <Image
+            source={{ uri: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80' }}
+            style={styles.bannerImage}
+            resizeMode="cover"
+          />
+          <View style={styles.bannerOverlay}>
+            <View>
+              <Text style={styles.bannerTitle}>Collecte des déchets</Text>
+              <Text style={styles.bannerSubTitle}>Pensez à sortir vos poubelles dès 6h.</Text>
             </View>
-            <View style={styles.summaryItem}>
-              <Ionicons name="location" size={18} color="#166534" />
-              <Text style={styles.summaryText}>1 point vert à 200m</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <Ionicons name="information-circle" size={18} color="#3b82f6" />
-              <Text style={styles.summaryText}>Prochain passage : Vendredi (Verre)</Text>
-            </View>
+            <TouchableOpacity style={styles.bannerButton} onPress={() => router.push('/calendrier')}>
+              <Text style={styles.bannerButtonText}>Voir les détails</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* 3. ALERTES & NOTIFICATIONS */}
-        <View style={styles.notifStatusCard}>
-          <View style={styles.notifStatusHeader}>
-            <Ionicons name="notifications" size={22} color={notificationsEnabled ? "#10b981" : "#94a3b8"} />
-            <Text style={styles.notifStatusTitle}>Alertes de collecte</Text>
-            <Switch
-              value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
-              trackColor={{ false: '#e2e8f0', true: '#166534' }}
-            />
-          </View>
-        </View>
-
-        {isCollecting && (
-          <View style={styles.alertCard}>
-            <Ionicons name="trash" size={30} color="#fff" />
-            <View style={styles.alertContent}>
-              <Text style={styles.alertTitle}>🚛 Le camion est là !</Text>
-              <Text style={styles.alertDescription}>Préparez vos sacs, il arrive dans votre rue.</Text>
+        {/* --- BANDEAU ALERTE CAMION --- */}
+        {alertActive && (
+          <TouchableOpacity
+            style={styles.alertBannerLink}
+            onPress={() => router.push("/map")}
+            activeOpacity={0.9}
+          >
+            <View style={styles.alertLeft}>
+              <View style={styles.alertIconCircle}>
+                <Ionicons name="trash-bin" size={20} color="white" />
+              </View>
+              <View style={styles.alertTextWrapper}>
+                <Text style={styles.alertTitle}>🚚 Le camion est là !</Text>
+                <Text style={styles.alertSub} numberOfLines={2}>
+                  Préparez vos sacs, il arrive dans votre rue ({truckZone}).
+                </Text>
+              </View>
             </View>
-          </View>
+            <View style={styles.alertRightButton}>
+              <Text style={styles.alertRightButtonText}>Voir sur la carte</Text>
+              <Ionicons name="chevron-forward" size={16} color="white" />
+            </View>
+          </TouchableOpacity>
         )}
 
-        {/* 4. BOUTON D'ACTION (ORANGE) */}
-        <TouchableOpacity style={styles.reportActionBtn} onPress={handleQuickReport}>
-          <View style={styles.quickActionContent}>
-            <Ionicons name="alert-circle" size={28} color="white" />
-            <View>
-              <Text style={styles.quickActionTitle}>Signaler un problème</Text>
-              <Text style={styles.quickActionSub}>Dépôt sauvage ou bac plein</Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={24} color="white" />
-        </TouchableOpacity>
+        {/* --- ACTIONS RAPIDES --- */}
+        <View style={styles.actionsSection}>
+          <Text style={styles.sectionTitle}>Actions rapides</Text>
+          <View style={styles.grid}>
 
-        {/* 5. IMPACT ÉCO (VERT) */}
-        <Text style={styles.sectionTitle}>🌱 Mon Impact Eco</Text>
-        <View style={styles.impactGrid}>
-          <View style={[styles.impactCard, { borderBottomColor: '#22c55e' }]}>
-            <Text style={styles.impactValue}>450</Text>
-            <Text style={styles.impactLabel}>Points Eco</Text>
-          </View>
-          <View style={[styles.impactCard, { borderBottomColor: '#166534' }]}>
-            <Text style={styles.impactValue}>12kg</Text>
-            <Text style={styles.impactLabel}>Recyclé</Text>
+            <TouchableOpacity
+              style={[styles.actionCard, { borderLeftColor: '#ef4444', borderLeftWidth: 5 }]}
+              onPress={() => router.push('/report')}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: '#fee2e2' }]}>
+                <Ionicons name="alert-circle" size={28} color="#ef4444" />
+              </View>
+              <Text style={styles.actionLabel}>Signaler</Text>
+              <Text style={styles.actionDesc} numberOfLines={1}>Dépôt ou bac plein</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionCard, { borderLeftColor: '#166534', borderLeftWidth: 5 }]}
+              onPress={() => router.push('/map')}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: '#dcfce7' }]}>
+                <Ionicons name="map" size={28} color="#166534" />
+              </View>
+              <Text style={styles.actionLabel}>Suivre camion</Text>
+              <Text style={styles.actionDesc} numberOfLines={1}>Position en live</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionCard, { borderLeftColor: '#0284c7', borderLeftWidth: 5 }]}
+              onPress={() => router.push('/calendrier')}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: '#e0f2fe' }]}>
+                <Ionicons name="calendar" size={28} color="#0284c7" />
+              </View>
+              <Text style={styles.actionLabel}>Calendrier</Text>
+              <Text style={styles.actionDesc} numberOfLines={1}>Jours de collecte</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.actionCard, { borderLeftColor: '#d97706', borderLeftWidth: 5 }]}
+              onPress={() => router.push('/historique')}
+            >
+              <View style={[styles.iconCircle, { backgroundColor: '#fef3c7' }]}>
+                <Ionicons name="time" size={28} color="#d97706" />
+              </View>
+              <Text style={styles.actionLabel}>Historique</Text>
+              <Text style={styles.actionDesc} numberOfLines={1}>Mes signalements</Text>
+            </TouchableOpacity>
+
           </View>
         </View>
 
-        {/* 6. PROCHAINES COLLECTES */}
-        <Text style={styles.sectionTitle}>🗓️ Planning de collecte</Text>
-        <View style={styles.scheduleCard}>
-          <View style={styles.scheduleItem}>
-            <View style={[styles.scheduleBadge, { backgroundColor: '#166534' }]} />
-            <Text style={styles.scheduleDay}>Mercredi : Ordures ménagères</Text>
-            <Text style={styles.scheduleTime}>18h</Text>
-          </View>
-          <View style={styles.scheduleItem}>
-            <View style={[styles.scheduleBadge, { backgroundColor: '#eab308' }]} />
-            <Text style={styles.scheduleDay}>Jeudi : Recyclage (Jaune)</Text>
-            <Text style={styles.scheduleTime}>18h</Text>
-          </View>
-        </View>
+        {/* Espace pour ne pas être caché par la NavBar */}
+        <View style={{ height: 100 }} />
 
-        <View style={{ height: 40 }} />
       </ScrollView>
+
+
     </SafeAreaView>
   );
 }
 
-// --- STYLES ---
 const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  scrollContent: { paddingBottom: 0 },
 
-  container: { flex: 1, backgroundColor: '#F8FAf8' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 },
-  greeting: { fontSize: 14, color: '#64748b' },
-  userName: { fontSize: 24, fontWeight: 'bold', color: '#1e293b' },
-  streetText: { fontSize: 13, color: '#166534', fontWeight: '600', marginTop: 4 },
-  profileButton: { width: 45, height: 45 },
-  profileInitial: { width: 45, height: 45, borderRadius: 23, backgroundColor: '#166534', justifyContent: 'center', alignItems: 'center' },
-  profileInitialText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-  
-  statsSection: { marginBottom: 10 },
-  sectionTitle: { fontSize: 17, fontWeight: 'bold', color: '#1e293b', marginHorizontal: 20, marginTop: 20, marginBottom: 12 },
-  summaryCard: { backgroundColor: '#fff', marginHorizontal: 20, padding: 15, borderRadius: 16, borderLeftWidth: 5, borderLeftColor: '#166534', elevation: 2 },
-  summaryItem: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  summaryText: { fontSize: 14, color: '#475569' },
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: '6%', paddingTop: 15, paddingBottom: 10, overflow: 'visible',
+  },
+  logoContainer: { width: 600, height: 95, justifyContent: 'center', alignItems: 'flex-start', marginLeft: -15, marginTop: -10 },
+  logo: { width: '100%', height: '100%', resizeMode: 'contain' },
+  profileContainer: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  profileName: { fontSize: 16, fontWeight: '700', color: '#1e293b' },
+  profileCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#166534', justifyContent: 'center', alignItems: 'center' },
+  profileLetter: { color: 'white', fontSize: 18, fontWeight: 'bold' },
 
-  notifStatusCard: { backgroundColor: '#fff', marginHorizontal: 20, padding: 12, borderRadius: 16, borderBottomWidth: 1, borderColor: '#f1f5f9' },
-  notifStatusHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  notifStatusTitle: { fontSize: 14, fontWeight: '600', color: '#475569' },
+  bannerContainer: { marginHorizontal: '6%', height: 200, borderRadius: 24, overflow: 'hidden', backgroundColor: '#000' },
+  bannerImage: { width: '100%', height: '100%', opacity: 0.85 },
+  bannerOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, top: 0, padding: 24, justifyContent: 'space-between', backgroundColor: 'rgba(0,0,0,0.3)' },
+  bannerTitle: { fontSize: 22, fontWeight: 'bold', color: 'white' },
+  bannerSubTitle: { fontSize: 14, color: '#e2e8f0', marginTop: 4 },
+  bannerButton: { backgroundColor: 'white', alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
+  bannerButtonText: { color: '#166534', fontWeight: 'bold', fontSize: 13 },
 
-  alertCard: { flexDirection: 'row', backgroundColor: '#f59e0b', margin: 20, borderRadius: 16, padding: 15, alignItems: 'center', gap: 15 },
+  alertBannerLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#f97316', marginHorizontal: '6%', padding: 16, borderRadius: 20, marginTop: 25, gap: 12 },
+  alertLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  alertTextWrapper: { flex: 1 },
+  alertIconCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
   alertTitle: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-  alertDescription: { color: 'white', fontSize: 12, opacity: 0.9 },
+  alertSub: { color: '#ffedd5', fontSize: 12, marginTop: 1 },
+  alertRightButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 30, gap: 4 },
+  alertRightButtonText: { color: 'white', fontWeight: 'bold', fontSize: 12 },
 
-  reportActionBtn: { backgroundColor: '#ea580c', marginHorizontal: 20, marginTop: 15, borderRadius: 16, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', elevation: 3 },
-  quickActionContent: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  quickActionTitle: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-  quickActionSub: { color: 'white', fontSize: 11, opacity: 0.8 },
-
-  impactGrid: { flexDirection: 'row', paddingHorizontal: 20, gap: 10 },
-  impactCard: { flex: 1, backgroundColor: 'white', padding: 15, borderRadius: 16, alignItems: 'center', borderBottomWidth: 3 },
-  impactValue: { fontSize: 22, fontWeight: 'bold', color: '#1e293b' },
-  impactLabel: { fontSize: 11, color: '#64748b' },
-
-  scheduleCard: { backgroundColor: '#fff', marginHorizontal: 20, borderRadius: 16, padding: 15, gap: 12 },
-  scheduleItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  scheduleBadge: { width: 8, height: 8, borderRadius: 4 },
-  scheduleDay: { fontSize: 13, color: '#1e293b', flex: 1, marginLeft: 10 },
-  scheduleTime: { fontSize: 13, fontWeight: 'bold', color: '#166534' },
+  actionsSection: { paddingHorizontal: '6%', marginTop: 30 },
+  sectionTitle: { fontSize: 20, fontWeight: '700', color: '#1e293b', marginBottom: 16 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 16 },
+  actionCard: { width: '48%', backgroundColor: 'white', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#e2e8f0', elevation: 2 },
+  iconCircle: { width: 48, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  actionLabel: { fontSize: 15, fontWeight: '700', color: '#1e293b' },
+  actionDesc: { fontSize: 11, color: '#64748b', marginTop: 2 },
 });
