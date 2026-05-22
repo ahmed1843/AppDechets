@@ -34,7 +34,8 @@ export default function RootLayout() {
         <Stack.Screen name="guide"           options={{ title: "Comment trier ?" }} />
         <Stack.Screen name="points"          options={{ title: "Récompenses" }} />
         <Stack.Screen name="profile"         options={{ title: "Paramètres" }} />
-        <Stack.Screen name="driver"          options={{ title: "Chauffeur" }} />
+    // ✅ Ajoutez headerShown: false sur driver
+        <Stack.Screen name="driver" options={{ headerShown: false }} />
         <Stack.Screen name="historique"      options={{ title: "Historique" }} />
         <Stack.Screen name="login"           options={{ headerShown: false }} />
         <Stack.Screen name="register"        options={{ headerShown: false }} />

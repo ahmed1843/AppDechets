@@ -13,8 +13,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, usePathname } from 'expo-router';
 import { BlurView } from 'expo-blur';
 
-// Pages où la NavBar est cachée
-const HIDDEN_ON = ['/login', '/register', '/forgot-password'];
+// ✅ Après
+const HIDDEN_ON = ['/login', '/register', '/forgot-password', '/driver', '/admin'];
 
 const NAV_ITEMS = [
   { route: '/',           icon: 'grid',           iconOutline: 'grid-outline',           label: 'Accueil'  },

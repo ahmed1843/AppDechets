@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { API_URL } from '../services/api';
+import { getToken } from '../services/auth'; // ✅ remplace localStorage
 
 export default function ReportScreen() {
   const router = useRouter();
@@ -72,7 +73,8 @@ export default function ReportScreen() {
     setLoading(true);
 
     try {
-      const token = localStorage.getItem('token');
+      const token = await getToken(); // ✅ remplace localStorage.getItem('token')
+
       const formData = new FormData();
       formData.append('title', title);
       formData.append('description', description);
@@ -99,6 +101,7 @@ export default function ReportScreen() {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
+          // ✅ PAS de Content-Type ici — FormData le gère automatiquement
         },
         body: formData,
       });
@@ -106,17 +109,13 @@ export default function ReportScreen() {
       const data = await response.json();
       console.log("📥 Réponse report:", data);
 
-   if (response.ok) {
-  // Alert.alert ne supporte pas onPress sur web
-  if (typeof window !== 'undefined') {
-    window.alert("✅ Signalement envoyé avec succès !");
-    router.replace('/historique');
-  } else {
-    Alert.alert("✅ Succès", "Signalement envoyé !", [
-      { text: "OK", onPress: () => router.replace('/historique') }
-    ]);
-  }
-}
+      if (response.ok) {
+        Alert.alert("✅ Succès", "Signalement envoyé !", [
+          { text: "OK", onPress: () => router.replace('/historique') }
+        ]);
+      } else {
+        Alert.alert("Erreur", data.message || "Échec de l'envoi");
+      }
 
     } catch (error) {
       console.error("Erreur report:", error);

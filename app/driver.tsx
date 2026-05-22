@@ -1,251 +1,266 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from "expo-router";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  SafeAreaView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-} from "react-native";
+  SafeAreaView, View, Text, StyleSheet,
+  TouchableOpacity, ActivityIndicator, Switch, Alert,
+} from 'react-native';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+// ✅ Après
+import { API_URL } from "../services/api";
+import { getToken, logout } from '../services/auth';
 
-// ✅ IP en dur (le .env ne se charge qu'au démarrage complet)
-const API_URL = "http://192.168.1.12:8000/api";
+const ZONES: Record<string, { lat: number; lng: number; rayon_km: number }> = {
+  'Plateau':  { lat: 14.6679, lng: -17.4424, rayon_km: 1.2 },
+  'Almadies': { lat: 14.7378, lng: -17.5110, rayon_km: 1.5 },
+  'Médina':   { lat: 14.6928, lng: -17.4467, rayon_km: 1.0 },
+};
+
+function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 export default function DriverScreen() {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [currentZone, setCurrentZone] = useState<string | null>("Plateau");
-  const [isCollecting, setIsCollecting] = useState(false);
-  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
-
-  const [zones, setZones] = useState([
-    { id: 1, name: "Plateau", habitants: 45, status: "pending" },
-    { id: 2, name: "Almadies", habitants: 58, status: "pending" },
-    { id: 3, name: "Médina", habitants: 63, status: "pending" },
-  ]);
-
-  // ✅ Démarrer le suivi GPS avec expo-location (fonctionne sur iPhone)
-  const startTracking = async () => {
-    console.log("Démarrage du tracking GPS...");
-
-    // Demander la permission
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission refusée', 'Le GPS est nécessaire pour le suivi de collecte.');
-      return;
-    }
-
-    // Lancer le watch
-    locationSubscription.current = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.High,
-        timeInterval: 5000,
-        distanceInterval: 10,
-      },
-      (location) => {
-        const { latitude, longitude } = location.coords;
-        console.log("📍 Position captée :", latitude, longitude);
-
-        fetch(`${API_URL}/alerte-chauffeur`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            zone_name: currentZone,
-            actif: true,
-            current_lat: latitude,
-            current_lng: longitude,
-          }),
-        })
-        .then(() => console.log("✅ Serveur mis à jour"))
-        .catch(err => console.log("❌ Erreur fetch GPS:", err));
-      }
-    );
-  };
-
-  // ✅ Arrêter le suivi GPS
-  const stopTracking = () => {
-    if (locationSubscription.current !== null) {
-      locationSubscription.current.remove();
-      locationSubscription.current = null;
-      console.log("🛑 Tracking GPS arrêté.");
-    }
-  };
+  const [alerteActive, setAlerteActive] = useState(false);
+  const [zoneDetectee, setZoneDetectee] = useState<string | null>(null);
+  const [position, setPosition]         = useState<{ lat: number; lng: number } | null>(null);
+  const [loading, setLoading]           = useState(false);
+  const [gpsAuto, setGpsAuto]           = useState(true);
+  const [selectedZone, setSelectedZone] = useState<string | null>(null);
+  const locationSub = useRef<any>(null);
+  const lastZoneRef = useRef<string | null>(null);
 
   useEffect(() => {
-    return () => stopTracking();
-  }, []);
+    if (gpsAuto) {
+      startGpsTracking();
+    } else {
+      stopGpsTracking();
+    }
+    return () => stopGpsTracking();
+  }, [gpsAuto]);
 
-  const handleArrival = async () => {
-    console.log("Tentative de démarrage...");
-    try {
-      setLoading(true);
-      const response = await fetch(`${API_URL}/alerte-chauffeur`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          zone_name: currentZone,
-          actif: true,
-        }),
-      });
-
-      if (response.ok) {
-        setIsCollecting(true);
-        await startTracking();
-        console.log("Collecte activée avec succès !");
+  const startGpsTracking = async () => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission GPS refusée', 'Activez la localisation pour le suivi automatique.');
+      setGpsAuto(false);
+      return;
+    }
+    locationSub.current = await Location.watchPositionAsync(
+      { accuracy: Location.Accuracy.High, timeInterval: 15000, distanceInterval: 50 },
+      (loc) => {
+        const pos = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+        setPosition(pos);
+        detecterZone(pos);
       }
-    } catch (error) {
-      console.error("Erreur au clic :", error);
-      Alert.alert("Erreur", "Impossible de contacter le serveur.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ✅ Alert.alert à la place de window.confirm (fonctionne sur iPhone)
-  const handleDeparture = () => {
-    if (!currentZone) return;
-
-    Alert.alert(
-      "Terminer la collecte",
-      `Terminer la collecte dans ${currentZone} ?`,
-      [
-        { text: "Annuler", style: "cancel" },
-        { text: "Terminer", style: "destructive", onPress: finishCollection },
-      ]
     );
   };
 
-  const finishCollection = async () => {
-    try {
-      setLoading(true);
-      stopTracking();
+  const stopGpsTracking = () => {
+    if (locationSub.current) {
+      locationSub.current.remove();
+      locationSub.current = null;
+    }
+  };
 
+  const detecterZone = async (pos: { lat: number; lng: number }) => {
+    for (const [nom, zone] of Object.entries(ZONES)) {
+      const dist = distanceKm(pos.lat, pos.lng, zone.lat, zone.lng);
+      if (dist < zone.rayon_km) {
+        setZoneDetectee(nom);
+        if (lastZoneRef.current !== nom) {
+          lastZoneRef.current = nom;
+          await envoyerAlerte(nom, true);
+        }
+        return;
+      }
+    }
+    if (lastZoneRef.current !== null) {
+      lastZoneRef.current = null;
+      setZoneDetectee(null);
+      await desactiverAlerte();
+    }
+  };
+
+  // ✅ Utilise /alerte-chauffeur (route publique, plus simple)
+  const envoyerAlerte = async (zone: string, actif: boolean) => {
+    try {
+      const token = await getToken();
       await fetch(`${API_URL}/alerte-chauffeur`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
         body: JSON.stringify({
-          zone_name: currentZone,
-          actif: false,
+          zone_name: zone,
+          actif,
+          lat: position?.lat,
+          lng: position?.lng,
         }),
       });
+      setAlerteActive(actif);
+    } catch (e) {
+      console.log('Erreur envoi alerte:', e);
+    }
+  };
 
-      setIsCollecting(false);
-      setZones(prev =>
-        prev.map(z => z.name === currentZone ? { ...z, status: "termine" } : z)
-      );
-    } catch (error) {
-      console.log(error);
-      Alert.alert("Erreur", "Impossible de contacter le serveur.");
+  const activerManuellement = async () => {
+    if (!selectedZone) {
+      Alert.alert('Sélectionnez une zone', 'Choisissez la zone avant d\'activer l\'alerte.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await envoyerAlerte(selectedZone, !alerteActive);
+      setZoneDetectee(alerteActive ? null : selectedZone);
+    } catch (e) {
+      Alert.alert('Erreur', 'Impossible d\'envoyer l\'alerte.');
     } finally {
       setLoading(false);
     }
   };
 
-  const getZoneStatusColor = (status: string) => {
-    switch(status) {
-      case 'termine': return '#10b981';
-      case 'en_cours': return '#f59e0b';
-      default: return '#e2e8f0';
+  const desactiverAlerte = async () => {
+    for (const zone of Object.keys(ZONES)) {
+      try {
+        await envoyerAlerte(zone, false);
+      } catch (_) {}
     }
+    setAlerteActive(false);
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#166534" />
-        <Text style={styles.loadingText}>Mise à jour du système...</Text>
-      </SafeAreaView>
-    );
-  }
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/login');
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>🚛 Mode Collecte</Text>
-          <TouchableOpacity onPress={() => { stopTracking(); router.replace("/"); }}>
-            <Ionicons name="log-out" size={24} color="#94a3b8" />
-          </TouchableOpacity>
-        </View>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>🚛 Tableau de bord chauffeur</Text>
+        <TouchableOpacity onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={24} color="#ef4444" />
+        </TouchableOpacity>
+      </View>
 
-        <View style={styles.currentZoneCard}>
-          <Text style={styles.currentZoneLabel}>📍 Zone actuelle</Text>
-          <Text style={styles.currentZoneName}>{currentZone || "Non sélectionnée"}</Text>
+      {/* Statut */}
+      <View style={[styles.statusCard, alerteActive ? styles.statusActive : styles.statusInactive]}>
+        <Text style={styles.statusIcon}>{alerteActive ? '🚛' : '🟢'}</Text>
+        <View>
+          <Text style={styles.statusTitle}>
+            {alerteActive ? `Alerte active — ${zoneDetectee}` : 'Aucune alerte active'}
+          </Text>
+          <Text style={styles.statusSub}>
+            {alerteActive ? 'Les citoyens ont été notifiés' : 'En attente de démarrage de tournée'}
+          </Text>
         </View>
+      </View>
 
-        <Text style={styles.sectionTitle}>📋 Zones à collecter</Text>
-        <View style={styles.zonesList}>
-          {zones.map((zone) => (
+      {/* GPS Auto */}
+      <View style={styles.card}>
+        <View style={styles.cardRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>📍 Suivi GPS automatique</Text>
+            <Text style={styles.cardSub}>Notifie quand vous entrez dans une zone</Text>
+          </View>
+          <Switch
+            value={gpsAuto}
+            onValueChange={setGpsAuto}
+            trackColor={{ false: '#cbd5e1', true: '#166534' }}
+            thumbColor="#fff"
+          />
+        </View>
+        {position && (
+          <Text style={styles.gpsText}>
+            📌 {position.lat.toFixed(5)}, {position.lng.toFixed(5)}
+            {zoneDetectee ? ` — Zone : ${zoneDetectee}` : ' — Hors zone'}
+          </Text>
+        )}
+      </View>
+
+      {/* Activation manuelle */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>🔔 Activation manuelle</Text>
+        <Text style={styles.cardSub}>Sélectionnez la zone et activez l'alerte</Text>
+        <View style={styles.zoneList}>
+          {Object.keys(ZONES).map((zone) => (
             <TouchableOpacity
-              key={zone.id}
-              style={[
-                styles.zoneCard,
-                currentZone === zone.name && styles.zoneCardSelected,
-                zone.status === 'termine' && styles.zoneCardCompleted
-              ]}
-              onPress={() => !isCollecting && setCurrentZone(zone.name)}
+              key={zone}
+              style={[styles.zoneBtn, selectedZone === zone && styles.zoneBtnActive]}
+              onPress={() => setSelectedZone(zone)}
             >
-              <View style={styles.zoneInfo}>
-                <Text style={[styles.zoneName, currentZone === zone.name && styles.zoneNameSelected]}>
-                  {zone.name}
-                </Text>
-                <Text style={styles.zoneHabitants}>
-                  <Ionicons name="people" size={12} color="#64748b" /> {zone.habitants} habitants
-                </Text>
-              </View>
-              <View style={[styles.zoneStatus, { backgroundColor: getZoneStatusColor(zone.status) }]}>
-                {zone.status === 'termine' && <Ionicons name="checkmark" size={16} color="#fff" />}
-              </View>
+              <Text style={[styles.zoneBtnText, selectedZone === zone && styles.zoneBtnTextActive]}>
+                {zone}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
-
-        {currentZone && (
-          !isCollecting ? (
-            <TouchableOpacity style={styles.actionButton} onPress={handleArrival}>
-              <Ionicons name="notifications" size={48} color="#fff" />
-              <Text style={styles.actionButtonTitle}>Je suis arrivé</Text>
-              <Text style={styles.actionButtonSubtitle}>Activer le suivi GPS dans {currentZone}</Text>
-            </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.alertBtn, alerteActive && styles.alertBtnStop]}
+          onPress={activerManuellement}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
           ) : (
-            <TouchableOpacity style={[styles.actionButton, styles.actionButtonActive]} onPress={handleDeparture}>
-              <Ionicons name="checkmark-circle" size={48} color="#fff" />
-              <Text style={styles.actionButtonTitle}>Collecte terminée</Text>
-              <Text style={styles.actionButtonSubtitle}>Arrêter le GPS pour {currentZone} ✓</Text>
-            </TouchableOpacity>
-          )
-        )}
-      </ScrollView>
+            <Text style={styles.alertBtnText}>
+              {alerteActive ? '⏹ Arrêter l\'alerte' : '▶ Démarrer l\'alerte'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F7FBF7' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F7FBF7' },
-  loadingText: { marginTop: 12, fontSize: 16, color: '#64748b' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10 },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#1e293b' },
-  currentZoneCard: { backgroundColor: '#166534', marginHorizontal: 20, marginTop: 10, marginBottom: 20, padding: 20, borderRadius: 20, alignItems: 'center' },
-  currentZoneLabel: { fontSize: 14, color: 'rgba(255,255,255,0.8)', marginBottom: 8 },
-  currentZoneName: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
-  sectionTitle: { fontSize: 16, fontWeight: '600', color: '#64748b', marginHorizontal: 20, marginBottom: 12 },
-  zonesList: { paddingHorizontal: 20, gap: 10, marginBottom: 30 },
-  zoneCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: 16, borderRadius: 16, borderWidth: 2, borderColor: '#e2e8f0' },
-  zoneCardSelected: { borderColor: '#166534', backgroundColor: '#f0fdf4' },
-  zoneCardCompleted: { backgroundColor: '#f8fafc', opacity: 0.6 },
-  zoneInfo: { flex: 1 },
-  zoneName: { fontSize: 16, fontWeight: '600', color: '#1e293b', marginBottom: 4 },
-  zoneNameSelected: { color: '#166534' },
-  zoneHabitants: { fontSize: 12, color: '#64748b' },
-  zoneStatus: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
-  actionButton: { backgroundColor: '#166534', borderRadius: 24, padding: 32, alignItems: 'center', marginHorizontal: 20, marginBottom: 30 },
-  actionButtonActive: { backgroundColor: '#f59e0b' },
-  actionButtonTitle: { fontSize: 24, fontWeight: 'bold', color: '#fff', marginTop: 12 },
-  actionButtonSubtitle: { fontSize: 14, color: 'rgba(255,255,255,0.9)', marginTop: 4 },
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 16, backgroundColor: '#fff',
+    borderBottomWidth: 1, borderBottomColor: '#e2e8f0',
+  },
+  headerTitle: { fontSize: 17, fontWeight: 'bold', color: '#1e293b' },
+  statusCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    margin: 16, padding: 16, borderRadius: 12,
+  },
+  statusActive:   { backgroundColor: '#fef3c7' },
+  statusInactive: { backgroundColor: '#f0fdf4' },
+  statusIcon:  { fontSize: 32 },
+  statusTitle: { fontWeight: '700', fontSize: 15, color: '#1e293b' },
+  statusSub:   { fontSize: 12, color: '#64748b', marginTop: 2 },
+  card: {
+    backgroundColor: '#fff', margin: 16, marginTop: 0,
+    borderRadius: 12, padding: 16, gap: 8,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+  },
+  cardRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cardTitle: { fontWeight: '600', fontSize: 15, color: '#1e293b' },
+  cardSub:   { fontSize: 12, color: '#64748b', marginTop: 2 },
+  gpsText:   { fontSize: 11, color: '#94a3b8', marginTop: 4 },
+  zoneList:  { flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 4 },
+  zoneBtn: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc',
+  },
+  zoneBtnActive:     { backgroundColor: '#166534', borderColor: '#166534' },
+  zoneBtnText:       { fontSize: 13, color: '#475569' },
+  zoneBtnTextActive: { color: '#fff', fontWeight: '600' },
+  alertBtn: {
+    backgroundColor: '#166534', borderRadius: 10,
+    padding: 14, alignItems: 'center', marginTop: 8,
+  },
+  alertBtnStop: { backgroundColor: '#ef4444' },
+  alertBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });

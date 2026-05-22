@@ -14,6 +14,7 @@ import {
   View,
   ActivityIndicator
 } from "react-native";
+import { saveAuth } from "../services/auth";
 import { API_URL } from "../services/api";
 
 const COLORS = {
@@ -95,13 +96,20 @@ export default function RegisterScreen() {
 
       if (response.ok) {
         alert("Félicitations ! Votre compte EcoWaste est prêt.");
-        localStorage.setItem('token', data.token);
+        // ✅ fallback sur le rôle local si le backend ne le retourne pas
+        const finalRole = data.user.role ?? role;
+        await saveAuth(data.token, {
+          id:    data.user.id,
+          name:  data.user.name,
+          email: data.user.email,
+          role:  finalRole,
+        });
 
         // ✅ Redirection selon le rôle
-        if (data.user.role === 'driver') {
+        if (finalRole === 'driver') {
           router.replace('/driver');
         } else {
-         router.replace('/');
+          router.replace('/');
         }
       } else {
         alert(data.message || "L'inscription a échoué.");
@@ -111,9 +119,8 @@ export default function RegisterScreen() {
     } finally {
       setLoading(false);
     }
-  }; // ← handleRegister se termine ici
+  };
 
-  // ✅ Le return est EN DEHORS de handleRegister
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex: 1}}>
@@ -230,14 +237,15 @@ export default function RegisterScreen() {
                 </>
               )}
             </TouchableOpacity>
-<TouchableOpacity 
-  style={styles.forgotLink} 
-  onPress={() => router.push('/forgot-password')}
->
-  <Text style={styles.forgotText}>Mot de passe oublié ?</Text>
-</TouchableOpacity>
 
-           <TouchableOpacity style={styles.loginLink} onPress={() => router.push("/login")}>
+            <TouchableOpacity
+              style={styles.forgotLink}
+              onPress={() => router.push('/forgot-password')}
+            >
+              <Text style={styles.forgotText}>Mot de passe oublié ?</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.loginLink} onPress={() => router.push("/login")}>
               <Text style={styles.loginLinkText}>
                 Déjà membre ? <Text style={{fontWeight: 'bold', color: COLORS.primary}}>Se connecter</Text>
               </Text>
@@ -251,8 +259,8 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-forgotLink: { marginTop: 12, alignItems: 'center' },
-forgotText: { color: '#166534', fontSize: 14 },
+  forgotLink: { marginTop: 12, alignItems: 'center' },
+  forgotText: { color: '#166534', fontSize: 14 },
   container: { flex: 1, backgroundColor: COLORS.bg },
   header: { alignItems: "center", padding: 30, paddingTop: 50 },
   backBtn: { position: 'absolute', left: 20, top: 50, zIndex: 10 },

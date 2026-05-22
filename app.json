@@ -4,7 +4,6 @@
     "slug": "smart-city-waste",
     "version": "1.0.0",
     "orientation": "portrait",
-    // "icon": "./assets/icon.png",  ← COMMENTE CETTE LIGNE
     "userInterfaceStyle": "dark",
     "splash": {
       "backgroundColor": "#0D1117"
@@ -13,11 +12,33 @@
       "supportsTablet": false
     },
     "android": {
+      "package": "com.smartwaste.app",
       "adaptiveIcon": {
         "backgroundColor": "#0D1117"
+      },
+      "config": {
+        "googleMaps": {
+          "apiKey": "VOTRE_CLE_GOOGLE_MAPS"
+        }
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Localisation pour suivre le camion poubelle."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3f90957e-7f1a-447b-91ad-6bca8eda1276"
       }
     },
-    "plugins": ["expo-router"],
-    "scheme": "smartwaste"
+    "owner": "ahmed2510"
   }
 }

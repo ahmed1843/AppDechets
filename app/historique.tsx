@@ -6,7 +6,9 @@ import {
   View, FlatList, Platform, RefreshControl, Image
 } from "react-native";
 import * as Haptics from 'expo-haptics';
-import API_URL from "../services/api";
+import AsyncStorage from '@react-native-async-storage/async-storage'; // ✅ remplace localStorage
+// ✅ APRÈS
+import api, { API_URL } from "../services/api";
 
 interface Report {
   id: number;
@@ -26,7 +28,8 @@ export default function HomeHistoryScreen() {
 
   const fetchMyReports = async () => {
     try {
-      const token = localStorage.getItem('token');
+      // ✅ APRÈS
+      const token = await AsyncStorage.getItem('token');
       const response = await fetch(`${API_URL}/my-reports`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -152,9 +155,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', marginBottom: 10
   },
   reportTitle: { fontSize: 16, fontWeight: 'bold', color: '#1e293b', flex: 1, marginRight: 8 },
-  reportImage: {
-    width: '100%', height: 180, borderRadius: 8, marginBottom: 10
-  },
+  reportImage: { width: '100%', height: 180, borderRadius: 8, marginBottom: 10 },
   description: { fontSize: 14, color: '#64748b', marginBottom: 12 },
   statusBadge: {
     flexDirection: 'row', alignItems: 'center',
