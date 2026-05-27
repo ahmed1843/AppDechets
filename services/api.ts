@@ -1,8 +1,8 @@
-import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axios from 'axios';
 
-// ✅ Une seule IP à changer ici
-export const API_URL = "http://192.168.1.17:8000/api";
+// ✅ Correct
+export const API_URL = "http://192.168.1.30:8000/api";
 
 // Instance axios avec token auto-injecté
 const api = axios.create({

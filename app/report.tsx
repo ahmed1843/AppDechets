@@ -1,14 +1,21 @@
-import React, { useState } from 'react';
-import { 
-  View, Text, StyleSheet, TextInput, TouchableOpacity, 
-  SafeAreaView, Image, Alert, ActivityIndicator, ScrollView,
-  Platform
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput, TouchableOpacity,
+  View
+} from 'react-native';
 import { API_URL } from '../services/api';
-import { getToken } from '../services/auth'; // ✅ remplace localStorage
+import { getToken } from '../services/auth';
 
 export default function ReportScreen() {
   const router = useRouter();
@@ -18,6 +25,8 @@ export default function ReportScreen() {
   const [image, setImage] = useState<string | null>(null); 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [titleError, setTitleError] = useState('');
+  const [descError, setDescError] = useState('');
 
   const takePhoto = async () => {
     try {
@@ -62,6 +71,22 @@ export default function ReportScreen() {
     }
   };
 
+  const handleTitleChange = (text: string) => {
+    setTitle(text);
+    if (text.length === 0) setTitleError('');
+    else if (text.length < 3) setTitleError(`Encore ${3 - text.length} caractère(s) requis`);
+    else setTitleError('');
+  };
+
+  const handleDescChange = (text: string) => {
+    setDescription(text);
+    if (text.length === 0) setDescError('');
+    else if (text.length < 5) setDescError(`Encore ${5 - text.length} caractère(s) requis`);
+    else setDescError('');
+  };
+
+  const isFormValid = title.length >= 3 && description.length >= 5;
+
   const handleSubmit = async () => {
     console.log(">>> Bouton cliqué !");
 
@@ -73,7 +98,7 @@ export default function ReportScreen() {
     setLoading(true);
 
     try {
-      const token = await getToken(); // ✅ remplace localStorage.getItem('token')
+      const token = await getToken();
 
       const formData = new FormData();
       formData.append('title', title);
@@ -101,7 +126,6 @@ export default function ReportScreen() {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
-          // ✅ PAS de Content-Type ici — FormData le gère automatiquement
         },
         body: formData,
       });
@@ -136,22 +160,29 @@ export default function ReportScreen() {
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+
         <Text style={styles.label}>Titre *</Text>
-        <TextInput 
-          style={styles.input} 
-          value={title} 
-          onChangeText={setTitle} 
-          placeholder="Titre du signalement..." 
+        <TextInput
+          style={[styles.input, titleError ? styles.inputError : null]}
+          value={title}
+          onChangeText={handleTitleChange}
+          placeholder="Titre du signalement..."
         />
+        {titleError ? (
+          <Text style={styles.errorText}>⚠ {titleError}</Text>
+        ) : null}
 
         <Text style={styles.label}>Description *</Text>
-        <TextInput 
-          style={styles.textArea} 
-          value={description} 
-          onChangeText={setDescription} 
-          multiline 
-          placeholder="Décrivez le problème..." 
+        <TextInput
+          style={[styles.textArea, descError ? styles.inputError : null]}
+          value={description}
+          onChangeText={handleDescChange}
+          multiline
+          placeholder="Décrivez le problème..."
         />
+        {descError ? (
+          <Text style={styles.errorText}>⚠ {descError}</Text>
+        ) : null}
 
         <View style={styles.photoContainer}>
           <TouchableOpacity style={styles.photoButton} onPress={takePhoto}>
@@ -184,9 +215,9 @@ export default function ReportScreen() {
         )}
 
         <TouchableOpacity 
-          style={[styles.submitButton, loading && styles.disabledButton]} 
+          style={[styles.submitButton, (!isFormValid || loading) && styles.disabledButton]} 
           onPress={handleSubmit} 
-          disabled={loading}
+          disabled={!isFormValid || loading}
         >
           {loading ? (
             <ActivityIndicator color="white" />
@@ -194,6 +225,7 @@ export default function ReportScreen() {
             <Text style={styles.submitText}>Envoyer le signalement</Text>
           )}
         </TouchableOpacity>
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -213,6 +245,12 @@ const styles = StyleSheet.create({
   textArea: { 
     backgroundColor: '#f1f5f9', borderRadius: 12, padding: 15, 
     height: 100, textAlignVertical: 'top' 
+  },
+  inputError: { 
+    borderWidth: 1, borderColor: '#E24B4A', backgroundColor: '#FCEBEB' 
+  },
+  errorText: { 
+    color: '#A32D2D', fontSize: 12, marginTop: 4, marginLeft: 4 
   },
   photoContainer: { flexDirection: 'row', gap: 15, marginTop: 20 },
   photoButton: { 
