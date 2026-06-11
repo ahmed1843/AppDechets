@@ -94,19 +94,16 @@ export default function HomeScreen() {
         return;
       }
 
-      // ── 2. Check landing (affiché une fois après onboarding) ──
-      const landingSeen = await AsyncStorage.getItem('landing_seen');
-      if (!landingSeen) {
-        router.replace('/landing');
-        return;
-      }
+ // Après — toujours afficher landing si pas connecté
+const u = await getUser();
+if (!u) {
+  router.replace('/landing');
+  return;
+}
 
-      // ── 3. Suite normale ─────────────────────────────────
-      const u = await getUser();
-      if (cancelled) return;
-      setUser(u);
+setUser(u); // ← ligne manquante
 
-      if (u?.role === 'driver') {
+if (u?.role === 'driver') {
         router.replace('/driver');
         return;
       }

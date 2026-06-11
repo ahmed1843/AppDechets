@@ -48,37 +48,43 @@ const logo = StyleSheet.create({
 
 // ── Actions rapides ───────────────────────────────────────────────────────────
 const ACTIONS = [
-  { icon: 'notifications', label: 'Alertes',         color: '#166534', route: '/report'   },
-  { icon: 'settings',      label: 'Services',        color: '#0f766e', route: '/support'  },
-  { icon: 'lock-closed',   label: 'Connexion',       color: '#166534', route: '/login'    },
-  { icon: 'person-add',    label: "S'inscrire",      color: '#15803d', route: '/register' },
+  { icon: 'notifications', label: 'Alertes',         color: '#166534', route: '/report'    },
+  { icon: 'settings',      label: 'Services',        color: '#0f766e', route: '/support'   },
+  { icon: 'lock-closed',   label: 'Connexion',       color: '#166534', route: '/login'     },
+  { icon: 'person-add',    label: "S'inscrire",      color: '#15803d', route: '/register'  },
   { icon: 'people',        label: 'Mes alertes',     color: '#166534', route: '/historique'},
-  { icon: 'map',           label: 'Points collecte', color: '#0f766e', route: '/map'      },
+  { icon: 'map',           label: 'Points collecte', color: '#0f766e', route: '/map'       },
 ];
 
 export default function LandingScreen() {
   const router = useRouter();
 
-const PROTECTED = ['/report', '/historique'];
+  const PROTECTED = ['/report', '/historique'];
 
-const handleAction = async (route: string) => {
-  await AsyncStorage.setItem('onboarding_done', 'true');
-  await AsyncStorage.setItem('landing_seen', 'true');
+  const handleAction = async (route: string) => {
+    await AsyncStorage.setItem('onboarding_done', 'true');
+    await AsyncStorage.setItem('landing_seen', 'true');
 
-  if (PROTECTED.includes(route)) {
-    router.push('/login');
-    return;
-  }
-  router.push(route as any);
-};
+    if (PROTECTED.includes(route)) {
+      router.push('/login');
+      return;
+    }
+    router.push(route as any);
+  };
 
   return (
-    <ImageBackground
-      source={require('../assets/images/collecte.jpg')}
-      style={styles.bg}
-      resizeMode="cover"
-    >
-      {/* Overlay vert semi-transparent comme SETALMA */}
+   <ImageBackground
+source={require('../assets/images/background2.jpg')}
+  style={styles.bg}
+// Recadrage portrait — centre sur l'agent
+resizeMode="cover"
+imageStyle={{ 
+  width: '160%', 
+  left: -80,
+  top: -20 
+}}
+
+>
       <View style={styles.overlay} />
 
       <SafeAreaView style={styles.safe}>
@@ -90,8 +96,6 @@ const handleAction = async (route: string) => {
 
         {/* Card principale */}
         <View style={styles.card}>
-
-          {/* Grille 2x3 */}
           <View style={styles.grid}>
             {ACTIONS.map((action, i) => (
               <TouchableOpacity
@@ -107,7 +111,6 @@ const handleAction = async (route: string) => {
               </TouchableOpacity>
             ))}
           </View>
-
         </View>
 
         {/* Tagline bas */}
@@ -119,10 +122,11 @@ const handleAction = async (route: string) => {
 }
 
 const styles = StyleSheet.create({
-  bg:      { flex: 1 },
+  bg: { flex: 1 },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(20, 83, 45, 0.72)',
+// Overlay masque le logo SONAGED
+backgroundColor: 'rgba(22, 32, 26, 0.58)',
   },
   safe: {
     flex: 1,
@@ -131,34 +135,33 @@ const styles = StyleSheet.create({
     paddingVertical: 32,
     paddingHorizontal: 20,
   },
-
   logoContainer: {
     marginTop: 16,
     alignItems: 'center',
   },
-
-  card: {
-    width: '100%',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 28,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-
+card: {
+  width: '100%',
+  backgroundColor: 'rgba(255,255,255,0.28)',
+  borderRadius: 28,
+  padding: 24,
+  borderWidth: 2,
+  borderColor: 'rgba(255,255,255,0.65)',
+  shadowColor: '#000',
+  shadowOpacity: 0.25,
+  shadowRadius: 16,
+  elevation: 10,
+},
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     rowGap: 28,
   },
-
   actionBtn: {
     width: '46%',
     alignItems: 'center',
     gap: 10,
   },
-
   iconCircle: {
     width: 72, height: 72, borderRadius: 36,
     justifyContent: 'center', alignItems: 'center',
@@ -166,7 +169,6 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.3,
     shadowRadius: 8, elevation: 6,
   },
-
   actionLabel: {
     color: 'white',
     fontSize: 13,
@@ -174,7 +176,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.2,
   },
-
   taglineBottom: {
     color: 'rgba(255,255,255,0.7)',
     fontSize: 13,

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "148484707601",
+    "project_id": "sama-gox",
+    "storage_bucket": "sama-gox.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:148484707601:android:5ef4b5cbb25d8658f3e8b0",
+        "android_client_info": {
+          "package_name": "com.smartwaste.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCEMfsQXI7KyNKpS1CfVBO0stfZbG8Y14Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

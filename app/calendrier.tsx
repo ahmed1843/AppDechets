@@ -29,6 +29,7 @@ function groupByDay(schedules: Schedule[]): Record<string, Schedule[]> {
   return schedules.reduce((acc, s) => {
     if (!acc[s.day_of_week]) acc[s.day_of_week] = [];
     acc[s.day_of_week].push(s);
+    acc[s.day_of_week].sort((a, b) => a.pickup_time.localeCompare(b.pickup_time));
     return acc;
   }, {} as Record<string, Schedule[]>);
 }
@@ -113,11 +114,14 @@ export default function CalendrierScreen() {
                   <Ionicons name="location" size={16} color="#166534" />
                   <Text style={styles.zoneName}>{s.zone?.name ?? `Zone ${s.zone_id}`}</Text>
                 </View>
-                <View style={styles.zoneRowRight}>
-                  <Ionicons name="time-outline" size={14} color="#64748b" />
-                 <Text style={styles.zoneTime}>{formatTime(s.pickup_time)}</Text>
-                  {s.truck_name && <Text style={styles.truckName}>· {s.truck_name}</Text>}
-                </View>
+             <View style={styles.zoneRowRight}>
+  <Ionicons
+    name={parseInt(s.pickup_time) >= 18 ? 'moon-outline' : 'sunny-outline'}
+    size={14}
+    color={parseInt(s.pickup_time) >= 18 ? '#8b5cf6' : '#f59e0b'}
+  />
+  <Text style={styles.zoneTime}>{formatTime(s.pickup_time)}</Text>
+</View>
               </View>
             ))}
           </View>
@@ -173,7 +177,7 @@ const styles = StyleSheet.create({
   zoneRowLeft:  { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
   zoneRowRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   zoneName:     { fontSize: 14, color: '#1e293b', fontWeight: '500' },
-  zoneTime:     { fontSize: 13, color: '#64748b' },
+zoneTime: { fontSize: 13, color: '#1e293b', fontWeight: '500' },
   truckName:    { fontSize: 11, color: '#94a3b8' },
   centered:     { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 12 },
   loadingText:  { fontSize: 14, color: '#64748b' },

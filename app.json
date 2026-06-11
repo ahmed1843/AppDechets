@@ -1,16 +1,11 @@
-
-// app.json — version corrigée et fusionnée
 {
   "expo": {
-    "name": "SmartWaste",
+    "name": "SAMA GOX",
     "slug": "smart-city-waste",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "backgroundColor": "#0D1117"
-    },
-    "web": {                          // ← AJOUTÉ ICI
+    "web": {
       "bundler": "metro"
     },
     "ios": {
@@ -31,14 +26,14 @@
         "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
-    "plugins": [
-      [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "Localisation pour suivre le camion poubelle."
-        }
-      ]
-    ],
+   "plugins": [
+  [
+    "expo-location",
+    {
+      "locationWhenInUsePermission": "Localisation pour suivre le camion poubelle."
+    }
+  ]
+],
     "extra": {
       "eas": {
         "projectId": "3f90957e-7f1a-447b-91ad-6bca8eda1276"
