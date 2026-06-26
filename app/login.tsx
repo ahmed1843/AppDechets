@@ -5,6 +5,8 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, SafeAreaView, ActivityIndicator,
 } from "react-native";
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 import { saveAuth } from "../services/auth";
 import { API_URL } from "../services/api";
 
@@ -14,6 +16,22 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const registerPushToken = async (token: string) => {
+    if (!Device.isDevice) return;
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== 'granted') return;
+    const pushToken = (await Notifications.getExpoPushTokenAsync()).data;
+    await fetch(`${API_URL}/save-push-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ token: pushToken }),
+    });
+  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -39,6 +57,12 @@ export default function LoginScreen() {
           email: data.user.email,
           role:  data.user.role,
         });
+
+        // ✅ Enregistrement du token push (citoyens uniquement)
+        if (data.user.role === 'citizen') {
+          await registerPushToken(data.token);
+        }
+
         if (data.user.role === 'driver') {
           router.replace('/driver');
         } else {

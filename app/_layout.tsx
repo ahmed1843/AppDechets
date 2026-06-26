@@ -1,7 +1,10 @@
 import { Stack } from 'expo-router';
 import { useEffect } from "react";
 import { Platform, View } from "react-native";
+import * as SplashScreen from 'expo-splash-screen'; // ✅ 1. import
 import NavBar from '../components/NavBar';
+
+SplashScreen.preventAutoHideAsync(); // ✅ 2. empêche le splash de se cacher tout seul
 
 export default function RootLayout() {
 
@@ -11,6 +14,7 @@ export default function RootLayout() {
         Notification.requestPermission();
       }
     }
+    SplashScreen.hideAsync(); // ✅ 3. cache le splash une fois le layout monté
   }, []);
 
   // Pages qui N'affichent PAS la NavBar
@@ -23,21 +27,20 @@ export default function RootLayout() {
           headerStyle: { backgroundColor: '#166534' },
           headerTintColor: '#FFFFFF',
           headerTitleStyle: { fontWeight: '600' },
-          // Important : pas d'animation qui cache la NavBar
           animation: 'fade',
         }}
       >
-<Stack.Screen name="index" options={{ title: "SAMA GOX", headerShown: false }} />
+        <Stack.Screen name="index" options={{ title: "SAMA GOX", headerShown: false }} />
         <Stack.Screen name="map"             options={{ title: "Carte des bacs" }} />
         <Stack.Screen name="calendrier"      options={{ title: "Horaires de passage" }} />
         <Stack.Screen name="report"          options={{ title: "Signalement" }} />
         <Stack.Screen name="guide"           options={{ title: "Comment trier ?" }} />
         <Stack.Screen name="points"          options={{ title: "Récompenses" }} />
         <Stack.Screen name="profile"         options={{ title: "Paramètres" }} />
-<Stack.Screen name="notifications" options={{ headerShown: false }} />
-<Stack.Screen name="support"       options={{ headerShown: false }} />
-<Stack.Screen name="privacy"       options={{ headerShown: false }} />
-<Stack.Screen name="about"         options={{ headerShown: false }} />
+        <Stack.Screen name="notifications" options={{ headerShown: false }} />
+        <Stack.Screen name="support"       options={{ headerShown: false }} />
+        <Stack.Screen name="privacy"       options={{ headerShown: false }} />
+        <Stack.Screen name="about"         options={{ headerShown: false }} />
         <Stack.Screen name="driver" options={{ headerShown: false }} />
         <Stack.Screen name="historique"      options={{ title: "Historique" }} />
         <Stack.Screen name="login"           options={{ headerShown: false }} />
@@ -46,8 +49,8 @@ export default function RootLayout() {
         <Stack.Screen name="user"            options={{ headerShown: false }} />
         <Stack.Screen name="admin"           options={{ headerShown: false }} />
         <Stack.Screen name="roles"           options={{ headerShown: false }} />
-<Stack.Screen name="onboarding" options={{ headerShown: false }} />
-<Stack.Screen name="landing" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+        <Stack.Screen name="landing" options={{ headerShown: false }} />
       </Stack>
 
       {/* NavBar persistante sur toutes les pages sauf login/register */}

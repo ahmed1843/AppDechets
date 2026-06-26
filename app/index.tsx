@@ -64,12 +64,12 @@ function SamaGoxLogo() {
 }
 
 const logoStyles = StyleSheet.create({
-  container:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  textBlock:  { flexDirection: 'column' },
-  textRow:    { flexDirection: 'row', alignItems: 'baseline' },
-  sama:       { fontSize: 20, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1 },
-  gox:        { fontSize: 20, fontWeight: '300', color: '#4ade80', letterSpacing: 3 },
-  tagline:    { fontSize: 9, fontWeight: '400', color: '#86efac', letterSpacing: 0.5, marginTop: 1 },
+  container: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  textBlock: { flexDirection: 'column' },
+  textRow:   { flexDirection: 'row', alignItems: 'baseline' },
+  sama:      { fontSize: 20, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1 },
+  gox:       { fontSize: 20, fontWeight: '300', color: '#4ade80', letterSpacing: 3 },
+  tagline:   { fontSize: 9, fontWeight: '400', color: '#86efac', letterSpacing: 0.5, marginTop: 1 },
 });
 
 export default function HomeScreen() {
@@ -83,27 +83,24 @@ export default function HomeScreen() {
   const initial = user?.name?.charAt(0).toUpperCase() ?? "?";
 
   useEffect(() => {
-    let cancelled = false;
     let interval: ReturnType<typeof setInterval> | null = null;
 
     (async () => {
-      // ── 1. Check onboarding ──────────────────────────────
       const seen = await AsyncStorage.getItem('onboarding_done');
       if (!seen) {
         router.replace('/onboarding');
         return;
       }
 
- // Après — toujours afficher landing si pas connecté
-const u = await getUser();
-if (!u) {
-  router.replace('/landing');
-  return;
-}
+      const u = await getUser();
+      if (!u) {
+        router.replace('/landing');
+        return;
+      }
 
-setUser(u); // ← ligne manquante
+      setUser(u);
 
-if (u?.role === 'driver') {
+      if (u?.role === 'driver') {
         router.replace('/driver');
         return;
       }
@@ -115,7 +112,6 @@ if (u?.role === 'driver') {
     })();
 
     return () => {
-      cancelled = true;
       if (interval) clearInterval(interval);
       notifListener.current?.remove();
       responseListener.current?.remove();
@@ -234,7 +230,9 @@ if (u?.role === 'driver') {
           <View style={styles.bannerOverlay}>
             <View>
               <Text style={styles.bannerTitle}>Collecte des déchets</Text>
-              <Text style={styles.bannerSubTitle}>Pensez à sortir vos poubelles à temps. Consultez le calendrier.</Text>
+              <Text style={styles.bannerSubTitle}>
+                Pensez à sortir vos poubelles à temps. Consultez le calendrier.
+              </Text>
             </View>
             <TouchableOpacity style={styles.bannerButton} onPress={() => router.push('/calendrier')}>
               <Text style={styles.bannerButtonText}>Voir les détails</Text>
@@ -271,17 +269,20 @@ if (u?.role === 'driver') {
           <Text style={styles.sectionTitle}>Actions rapides</Text>
           <View style={styles.grid}>
 
+            {/* ✅ PATCH 1 — Signaler : bordure verte + icône flag neutre */}
             <TouchableOpacity
-              style={[styles.actionCard, { borderLeftColor: '#ef4444', borderLeftWidth: 5 }]}
+              style={[styles.actionCard, { borderLeftColor: '#166534', borderLeftWidth: 5 }]}
               onPress={() => router.push('/report')}
             >
-              <View style={[styles.iconCircle, { backgroundColor: '#fee2e2' }]}>
-                <Ionicons name="alert-circle" size={28} color="#ef4444" />
+              <View style={[styles.iconCircle, { backgroundColor: '#dcfce7' }]}>
+                <Ionicons name="flag" size={28} color="#166534" />
               </View>
               <Text style={styles.actionLabel}>Signaler</Text>
+              {/* ✅ PATCH 2 — texte plus court, pas tronqué */}
               <Text style={styles.actionDesc} numberOfLines={1}>Dépôt ou bac plein</Text>
             </TouchableOpacity>
 
+            {/* ✅ PATCH 3 — Voir la carte : texte raccourci */}
             <TouchableOpacity
               style={[styles.actionCard, { borderLeftColor: '#166534', borderLeftWidth: 5 }]}
               onPress={() => router.push('/map')}
@@ -289,8 +290,8 @@ if (u?.role === 'driver') {
               <View style={[styles.iconCircle, { backgroundColor: '#dcfce7' }]}>
                 <Ionicons name="map" size={28} color="#166534" />
               </View>
-              <Text style={styles.actionLabel}>Suivre camion</Text>
-              <Text style={styles.actionDesc} numberOfLines={1}>Position en live</Text>
+              <Text style={styles.actionLabel}>Voir la carte</Text>
+              <Text style={styles.actionDesc} numberOfLines={1}>Points de collecte</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -345,6 +346,7 @@ const styles = StyleSheet.create({
   profileLetter:   { color: '#14532d', fontSize: 16, fontWeight: 'bold' },
   loginButton:     { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 },
   loginButtonText: { color: 'white', fontWeight: '700', fontSize: 13 },
+
   bannerContainer: {
     marginHorizontal: 20, height: 200, borderRadius: 24,
     overflow: 'hidden', backgroundColor: '#000', marginTop: 16,
@@ -355,13 +357,14 @@ const styles = StyleSheet.create({
     padding: 24, justifyContent: 'space-between',
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
-  bannerTitle:    { fontSize: 22, fontWeight: 'bold', color: 'white' },
-  bannerSubTitle: { fontSize: 14, color: '#e2e8f0', marginTop: 4 },
-  bannerButton:   {
+  bannerTitle:      { fontSize: 22, fontWeight: 'bold', color: 'white' },
+  bannerSubTitle:   { fontSize: 14, color: '#e2e8f0', marginTop: 4 },
+  bannerButton:     {
     backgroundColor: 'white', alignSelf: 'flex-start',
     paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
   },
   bannerButtonText: { color: '#166534', fontWeight: 'bold', fontSize: 13 },
+
   alertBannerLink: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: '#f97316', marginHorizontal: 20, padding: 16,
@@ -377,14 +380,21 @@ const styles = StyleSheet.create({
   alertTitle: { color: 'white', fontSize: 16, fontWeight: 'bold' },
   alertSub:   { color: '#ffedd5', fontSize: 12, marginTop: 1 },
   closeBtn:   { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20, padding: 6 },
+
   actionsSection: { paddingHorizontal: 20, marginTop: 28 },
   sectionTitle:   { fontSize: 20, fontWeight: '700', color: '#1e293b', marginBottom: 16 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 16 },
+  grid: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    justifyContent: 'space-between', rowGap: 16,
+  },
   actionCard: {
     width: '48%', backgroundColor: 'white', borderRadius: 20,
     padding: 20, borderWidth: 1, borderColor: '#e2e8f0', elevation: 2,
   },
-  iconCircle:  { width: 48, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  iconCircle:  {
+    width: 48, height: 48, borderRadius: 14,
+    justifyContent: 'center', alignItems: 'center', marginBottom: 12,
+  },
   actionLabel: { fontSize: 15, fontWeight: '700', color: '#1e293b' },
   actionDesc:  { fontSize: 11, color: '#64748b', marginTop: 2 },
 });

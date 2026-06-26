@@ -4,8 +4,8 @@ import { Platform } from 'react-native';
 
 // ✅ Une seule IP à changer ici
 export const API_URL = Platform.OS === 'web'
-  ? "http://127.0.0.1:8000/api"      // navigateur
-  : "http://192.168.1.8:8000/api";  // téléphone mobile
+  ? "http://127.0.0.1:8000/api"        // navigateur (PC)
+  : "http://192.168.137.1:8000/api";    // téléphone via hotspot/Wi-Fi
 
 // Instance axios avec token auto-injecté
 const api = axios.create({
@@ -19,7 +19,7 @@ const api = axios.create({
 // Intercepteur — injecte le token Sanctum automatiquement
 api.interceptors.request.use(
   async (config) => {
-    const token = await AsyncStorage.getItem('token'); // ✅ clé unifiée
+    const token = await AsyncStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
