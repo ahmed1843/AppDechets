@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-  Alert, SafeAreaView, ScrollView, StyleSheet,
+  ActivityIndicator, Alert, SafeAreaView, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, View,
 } from "react-native";
 import { API_URL } from "../services/api";
@@ -12,35 +12,43 @@ import { useCallback } from 'react';
 
 export default function ProfileScreen() {
   const router = useRouter();
- // ✅
-const [user, setUser] = useState({
-  name: "", email: "", phone: "", street: "", points: 0, reportsCount: 0, role: "",
-});;
+  // ✅
+  const [user, setUser] = useState({
+    name: "", email: "", phone: "", street: "", points: 0, reportsCount: 0, role: "",
+  });
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  // ✅ Zones dynamiques (même logique que l'écran d'inscription)
+  const [availableStreets, setAvailableStreets] = useState<string[]>([]);
+  const [loadingStreets, setLoadingStreets] = useState(false);
+  const realStreets = ["Plateau", "Almadies", "Médina"];
 
   const getLevel = (points: number) => {
     if (points >= 500) return 'Or';
     if (points >= 100) return 'Argent';
     return 'Bronze';
   };
-const menuItems = React.useMemo(() => [
-  { icon: "notifications-outline", title: "Notifications", color: "#3b82f6", badge: unreadCount > 0 ? String(unreadCount) : null, route: "/notifications" },
-  { icon: "shield-checkmark-outline", title: "Confidentialité", color: "#10b981", badge: null, route: "/privacy" },
-  { icon: "help-circle-outline", title: "Aide et support", color: "#f59e0b", badge: null, route: "/support" },
-  { icon: "information-circle-outline", title: "À propos", color: "#8b5cf6", badge: null, route: "/about" },
-  { icon: "star-outline", title: "Évaluer l'application", color: "#ec4899", badge: null, route: null },
-  // ✅ Bouton admin conditionnel
-  ...(user.role === 'admin' ? [{ icon: "settings-outline", title: "Console Admin", color: "#166534", badge: null, route: "/admin" }] : []),
-], [unreadCount, user.role]); // ✅ ajouter user.role dans les deps
 
-useFocusEffect(
-  useCallback(() => {
-    fetchUser();
-    fetchUnreadCount();
-  }, [])
-);
+  const menuItems = React.useMemo(() => [
+    { icon: "notifications-outline", title: "Notifications", color: "#3b82f6", badge: unreadCount > 0 ? String(unreadCount) : null, route: "/notifications" },
+    { icon: "shield-checkmark-outline", title: "Confidentialité", color: "#10b981", badge: null, route: "/privacy" },
+    { icon: "help-circle-outline", title: "Aide et support", color: "#f59e0b", badge: null, route: "/support" },
+    { icon: "information-circle-outline", title: "À propos", color: "#8b5cf6", badge: null, route: "/about" },
+    { icon: "star-outline", title: "Évaluer l'application", color: "#ec4899", badge: null, route: null },
+    // ✅ Bouton admin conditionnel
+    ...(user.role === 'admin' ? [{ icon: "settings-outline", title: "Console Admin", color: "#166534", badge: null, route: "/admin" }] : []),
+  ], [unreadCount, user.role]); // ✅ ajouter user.role dans les deps
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchUser();
+      fetchUnreadCount();
+      fetchStreets(); // ✅ ajouté
+    }, [])
+  );
+
   const fetchUser = async () => {
     try {
       const localUser = await getUser();
@@ -54,14 +62,14 @@ useFocusEffect(
       });
       if (response.ok) {
         const data = await response.json();
-    // Dans fetchUser(), après response.ok
-setUser({
-  name: data.name || "", email: data.email || "",
-  phone: data.telephone || data.phone || "",
-  street: data.street || "", points: data.points || 0,
-  reportsCount: data.reports_count || 0,
-  role: data.role || "",  // ✅ ajouter cette ligne
-});
+        // Dans fetchUser(), après response.ok
+        setUser({
+          name: data.name || "", email: data.email || "",
+          phone: data.telephone || data.phone || "",
+          street: data.street || "", points: data.points || 0,
+          reportsCount: data.reports_count || 0,
+          role: data.role || "",  // ✅ ajouter cette ligne
+        });
       } else if (response.status === 401) {
         await logout();
         router.replace('/login');
@@ -82,6 +90,24 @@ setUser({
       const data = await res.json();
       setUnreadCount(data.filter((n: any) => !n.is_read).length);
     } catch (e) {}
+  };
+
+  // ✅ Récupère les zones gérées par l'app (même source que l'inscription)
+  const fetchStreets = async () => {
+    setLoadingStreets(true);
+    try {
+      const response = await fetch(`${API_URL}/streets`);
+      if (response.ok) {
+        const data = await response.json();
+        setAvailableStreets(data);
+      } else {
+        setAvailableStreets(realStreets);
+      }
+    } catch (error) {
+      setAvailableStreets(realStreets);
+    } finally {
+      setLoadingStreets(false);
+    }
   };
 
   const handleLogout = () => {
@@ -164,8 +190,32 @@ setUser({
               <TextInput style={[styles.input, styles.inputDisabled]} value={user.email} editable={false} />
               <Text style={styles.inputLabel}>Téléphone</Text>
               <TextInput style={styles.input} value={user.phone} onChangeText={(t) => setUser({ ...user, phone: t })} keyboardType="phone-pad" />
+
+              {/* ✅ Sélecteur de zone (remplace le champ texte libre) */}
               <Text style={styles.inputLabel}>Rue / Quartier</Text>
-              <TextInput style={styles.input} value={user.street} onChangeText={(t) => setUser({ ...user, street: t })} placeholder="Ex: Médina, Plateau..." />
+              {loadingStreets ? (
+                <ActivityIndicator color="#166534" style={{ marginVertical: 20 }} />
+              ) : (
+                <View style={styles.streetsListProfile}>
+                  {availableStreets.map((s) => (
+                    <TouchableOpacity
+                      key={s}
+                      style={[styles.streetOption, user.street === s && styles.streetOptionActive]}
+                      onPress={() => setUser({ ...user, street: s })}
+                    >
+                      <Ionicons
+                        name={user.street === s ? "radio-button-on" : "radio-button-off"}
+                        size={20}
+                        color={user.street === s ? "#166534" : "#64748b"}
+                      />
+                      <Text style={[styles.streetText, user.street === s && styles.streetTextActive]}>
+                        {s}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
               <TouchableOpacity style={styles.saveButton} onPress={handleUpdateProfile}>
                 <Text style={styles.saveButtonText}>Enregistrer les modifications</Text>
               </TouchableOpacity>
@@ -250,11 +300,16 @@ const styles = StyleSheet.create({
   userEmail: { fontSize: 14, color: '#64748b', marginTop: 4 },
   userPhone: { fontSize: 14, color: '#64748b', marginTop: 2 },
   streetBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f0fdf4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, marginTop: 8, borderWidth: 1, borderColor: '#bbf7d0' },
-  streetText: { fontSize: 12, color: '#166534', fontWeight: '500' },
   editForm: { width: '100%', marginTop: 16 },
   inputLabel: { fontSize: 12, fontWeight: '600', color: '#64748b', marginBottom: 4, marginLeft: 4 },
   input: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 14, fontSize: 15, marginBottom: 14, color: '#1e293b' },
   inputDisabled: { opacity: 0.5 },
+  // ✅ Styles du sélecteur de zone (mêmes noms/valeurs que register.tsx pour cohérence visuelle)
+  streetsListProfile: { marginBottom: 14 },
+  streetOption: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 15, backgroundColor: "#f8fafc", borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: "#e2e8f0", gap: 10 },
+  streetOptionActive: { borderColor: "#166534", backgroundColor: '#f0fdf4' },
+  streetText: { fontSize: 12, color: "#166534", fontWeight: '500' },
+  streetTextActive: { color: "#166534", fontWeight: "500" },
   saveButton: { backgroundColor: '#166534', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 4 },
   saveButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
   statsContainer: { flexDirection: 'row', backgroundColor: 'white', marginHorizontal: 16, borderRadius: 20, padding: 16, marginBottom: 16 },
