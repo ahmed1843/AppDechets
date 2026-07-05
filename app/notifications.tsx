@@ -1,8 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
-import React, { useEffect, useState } from 'react';
-// ✅ Ajoute cet import
+import React, { useState } from 'react';
 
 import { API_URL } from '../services/api';
 import { getToken, logout } from '../services/auth';
