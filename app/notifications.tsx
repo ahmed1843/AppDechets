@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
 import React, { useEffect, useState } from 'react';
 // ✅ Ajoute cet import
 
 import { API_URL } from '../services/api';
-import { getToken } from '../services/auth';
+import { getToken, logout } from '../services/auth';
 
 // ✅ Ajoute la ligne react-native manquante
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -23,17 +24,27 @@ export default function NotificationsScreen() {
 const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { fetchNotifications(); }, []);
+  useFocusEffect(
+  useCallback(() => {
+    fetchNotifications();
+  }, [])
+);
 
 const fetchNotifications = async () => {
   try {
     const token = await getToken();
+console.log('🔑 Token utilisé par l\'app:', token);
     const res = await fetch(`${API_URL}/notifications`, {
       headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' },
     });
-    const text = await res.text(); // ← temporaire
-    console.log('=== NOTIFICATIONS RAW ===', text); // ← voir ce que retourne l'API
-    const data = JSON.parse(text);
+
+    if (res.status === 401) {
+      await logout();
+      router.replace('/login');
+      return;
+    }
+
+    const data = await res.json();
     setNotifications(Array.isArray(data) ? data : data?.data ?? []);
   } catch (e) {
     console.error('FETCH ERROR:', e);

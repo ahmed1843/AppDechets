@@ -1,34 +1,58 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
 import {
-  ActivityIndicator, Alert, SafeAreaView, ScrollView, StyleSheet,
-  Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator, Alert,
+  Modal,
+  Platform,
+  SafeAreaView, ScrollView, StyleSheet,
+  Text, TextInput, TouchableOpacity, View
 } from "react-native";
 import { API_URL } from "../services/api";
 import { getToken, getUser, logout } from "../services/auth";
-import { useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
+
+// Définition de l'interface pour le typage strict du User
+interface UserData {
+  name: string;
+  email: string;
+  phone: string;
+  street: string;
+  points: number;
+  reportsCount: number;
+  role: string;
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
-  // ✅
-  const [user, setUser] = useState({
+  const [user, setUser] = useState<UserData>({
     name: "", email: "", phone: "", street: "", points: 0, reportsCount: 0, role: "",
   });
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false); // État de chargement pour la suppression
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // ✅ Zones dynamiques (même logique que l'écran d'inscription)
   const [availableStreets, setAvailableStreets] = useState<string[]>([]);
   const [loadingStreets, setLoadingStreets] = useState(false);
   const realStreets = ["Plateau", "Almadies", "Médina"];
+
+  // États pour la modale d'évaluation
+  const [isRatingModalVisible, setIsRatingModalVisible] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [reviewText, setReviewText] = useState('');
 
   const getLevel = (points: number) => {
     if (points >= 500) return 'Or';
     if (points >= 100) return 'Argent';
     return 'Bronze';
+  };
+
+  const getLevelStyle = (level: string) => {
+    switch (level) {
+      case 'Or': return { color: '#d97706', bg: '#fef3c7' };
+      case 'Argent': return { color: '#475569', bg: '#f1f5f9' };
+      default: return { color: '#b45309', bg: '#ffedd5' }; // Bronze
+    }
   };
 
   const menuItems = React.useMemo(() => [
@@ -37,15 +61,14 @@ export default function ProfileScreen() {
     { icon: "help-circle-outline", title: "Aide et support", color: "#f59e0b", badge: null, route: "/support" },
     { icon: "information-circle-outline", title: "À propos", color: "#8b5cf6", badge: null, route: "/about" },
     { icon: "star-outline", title: "Évaluer l'application", color: "#ec4899", badge: null, route: null },
-    // ✅ Bouton admin conditionnel
     ...(user.role === 'admin' ? [{ icon: "settings-outline", title: "Console Admin", color: "#166534", badge: null, route: "/admin" }] : []),
-  ], [unreadCount, user.role]); // ✅ ajouter user.role dans les deps
+  ], [unreadCount, user.role]);
 
   useFocusEffect(
     useCallback(() => {
       fetchUser();
       fetchUnreadCount();
-      fetchStreets(); // ✅ ajouté
+      fetchStreets();
     }, [])
   );
 
@@ -62,13 +85,12 @@ export default function ProfileScreen() {
       });
       if (response.ok) {
         const data = await response.json();
-        // Dans fetchUser(), après response.ok
         setUser({
           name: data.name || "", email: data.email || "",
           phone: data.telephone || data.phone || "",
           street: data.street || "", points: data.points || 0,
           reportsCount: data.reports_count || 0,
-          role: data.role || "",  // ✅ ajouter cette ligne
+          role: data.role || "",
         });
       } else if (response.status === 401) {
         await logout();
@@ -92,7 +114,6 @@ export default function ProfileScreen() {
     } catch (e) {}
   };
 
-  // ✅ Récupère les zones gérées par l'app (même source que l'inscription)
   const fetchStreets = async () => {
     setLoadingStreets(true);
     try {
@@ -155,17 +176,86 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleSubmitRating = () => {
+    if (rating === 0) {
+      Alert.alert("Note requise", "Veuillez sélectionner au moins une étoile.");
+      return;
+    }
+    setIsRatingModalVisible(false);
+    Alert.alert(
+      "Merci !", 
+      `Votre note de ${rating}/5 a bien été prise en compte. Merci d'aider SAMA GOX à s'améliorer !`
+    );
+    setRating(0);
+    setReviewText('');
+  };
+
+  // --- LOGIQUE DE SUPPRESSION DE COMPTE ---
+  const confirmAccountDeletion = () => {
+    Alert.alert(
+      "⚠️ Suppression du compte",
+"Êtes-vous absolument sûr de vouloir supprimer votre compte SAMA GOX ? Cette action est définitive : votre profil et vos points éco seront supprimés. Vos signalements resteront visibles de façon anonyme, pour continuer à aider votre quartier.",
+      [
+        { text: "Annuler", style: "cancel" },
+        { 
+          text: "Supprimer définitivement", 
+          style: "destructive", 
+          onPress: handleDeleteAccount 
+        }
+      ]
+    );
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    try {
+      const token = await getToken();
+      const response = await fetch(`${API_URL}/user/delete`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.status === 'success') {
+        await logout();
+        Alert.alert("Compte supprimé", "Votre compte a bien été retiré de SAMA GOX.");
+        router.replace('/login');
+      } else {
+        Alert.alert("Erreur", data.message || "Impossible de supprimer le compte actuellement.");
+      }
+    } catch (error) {
+      Alert.alert("Erreur", "Une erreur réseau est survenue lors de la tentative de suppression.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#166534" />
+      </View>
+    );
+  }
+
   const initial = user.name?.charAt(0).toUpperCase() || "?";
+  const currentLevel = getLevel(user.points);
+  const levelTheme = getLevelStyle(currentLevel);
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="black" />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={22} color="#1e293b" />
         </TouchableOpacity>
         <Text style={styles.title}>Mon profil</Text>
-        <TouchableOpacity onPress={() => setIsEditing(!isEditing)}>
-          <Ionicons name={isEditing ? "close-outline" : "create-outline"} size={24} color="#166534" />
+        <TouchableOpacity onPress={() => setIsEditing(!isEditing)} style={styles.editBtn}>
+          <Ionicons name={isEditing ? "close-outline" : "create-outline"} size={22} color="#166534" />
         </TouchableOpacity>
       </View>
 
@@ -185,13 +275,12 @@ export default function ProfileScreen() {
           {isEditing ? (
             <View style={styles.editForm}>
               <Text style={styles.inputLabel}>Nom complet</Text>
-              <TextInput style={styles.input} value={user.name} onChangeText={(t) => setUser({ ...user, name: t })} placeholder="Nom complet" />
+              <TextInput style={styles.input} value={user.name} onChangeText={(t) => setUser({ ...user, name: t })} placeholder="Nom complet" placeholderTextColor="#94a3b8" />
               <Text style={styles.inputLabel}>Email</Text>
               <TextInput style={[styles.input, styles.inputDisabled]} value={user.email} editable={false} />
               <Text style={styles.inputLabel}>Téléphone</Text>
-              <TextInput style={styles.input} value={user.phone} onChangeText={(t) => setUser({ ...user, phone: t })} keyboardType="phone-pad" />
+              <TextInput style={styles.input} value={user.phone} onChangeText={(t) => setUser({ ...user, phone: t })} keyboardType="phone-pad" placeholder="Numéro de téléphone" placeholderTextColor="#94a3b8" />
 
-              {/* ✅ Sélecteur de zone (remplace le champ texte libre) */}
               <Text style={styles.inputLabel}>Rue / Quartier</Text>
               {loadingStreets ? (
                 <ActivityIndicator color="#166534" style={{ marginVertical: 20 }} />
@@ -208,7 +297,7 @@ export default function ProfileScreen() {
                         size={20}
                         color={user.street === s ? "#166534" : "#64748b"}
                       />
-                      <Text style={[styles.streetText, user.street === s && styles.streetTextActive]}>
+                      <Text style={[styles.streetTextOption, user.street === s && styles.streetTextActive]}>
                         {s}
                       </Text>
                     </TouchableOpacity>
@@ -224,10 +313,12 @@ export default function ProfileScreen() {
             <>
               <Text style={styles.userName}>{user.name || "—"}</Text>
               <Text style={styles.userEmail}>{user.email || "—"}</Text>
-              <Text style={styles.userPhone}>{user.phone || "Téléphone non renseigné"}</Text>
+              <Text style={[styles.userPhone, !user.phone && styles.userPhoneUnset]}>
+                {user.phone || "Téléphone non renseigné"}
+              </Text>
               {user.street ? (
                 <View style={styles.streetBadge}>
-                  <Ionicons name="location-outline" size={13} color="#166534" />
+                  <Ionicons name="location" size={13} color="#166534" />
                   <Text style={styles.streetText}>{user.street}</Text>
                 </View>
               ) : null}
@@ -235,6 +326,7 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {/* Statistiques Gamification */}
         <View style={styles.statsContainer}>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{user.points}</Text>
@@ -247,21 +339,24 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{getLevel(user.points)}</Text>
+            <View style={[styles.levelBadge, { backgroundColor: levelTheme.bg }]}>
+              <Text style={[styles.levelValue, { color: levelTheme.color }]}>{currentLevel}</Text>
+            </View>
             <Text style={styles.statLabel}>Niveau</Text>
           </View>
         </View>
 
+        {/* Section Paramètres */}
         <View style={styles.menuSection}>
           <Text style={styles.menuTitle}>Paramètres</Text>
           {menuItems.map((item, index) => (
             <TouchableOpacity
               key={index}
               style={styles.menuItem}
-              onPress={() => item.route ? router.push(item.route as any) : Alert.alert("Bientôt", "Disponible prochainement")}
+              onPress={() => item.title === "Évaluer l'application" ? setIsRatingModalVisible(true) : item.route ? router.push(item.route as any) : null}
             >
-              <View style={[styles.menuIcon, { backgroundColor: `${item.color}20` }]}>
-                <Ionicons name={item.icon as any} size={22} color={item.color} />
+              <View style={[styles.menuIcon, { backgroundColor: `${item.color}15` }]}>
+                <Ionicons name={item.icon as any} size={20} color={item.color} />
               </View>
               <Text style={styles.menuText}>{item.title}</Text>
               {item.badge && (
@@ -269,63 +364,206 @@ export default function ProfileScreen() {
                   <Text style={styles.badgeText}>{item.badge}</Text>
                 </View>
               )}
-              <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
+              <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
             </TouchableOpacity>
           ))}
         </View>
 
+        {/* ZONE DE DANGER (Ajoutée proprement ici) */}
+        <View style={styles.dangerSection}>
+          <Text style={styles.dangerTitle}>Zone de danger</Text>
+          <Text style={styles.dangerDescription}>
+            La suppression est irréversible. Toutes vos données seront effacées des serveurs.
+          </Text>
+          <TouchableOpacity 
+            style={[styles.deleteButton, deleting && styles.disabledButton]} 
+            onPress={confirmAccountDeletion}
+            disabled={deleting}
+          >
+            {deleting ? (
+              <ActivityIndicator color="#dc2626" />
+            ) : (
+              <View style={styles.buttonFlexRow}>
+                <Ionicons name="trash-outline" size={18} color="#dc2626" />
+                <Text style={styles.deleteButtonText}>Supprimer mon compte</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Footer & Déconnexion */}
         <View style={styles.footer}>
           <Text style={styles.versionText}>Version 1.0.0</Text>
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={22} color="#ef4444" />
+            <Ionicons name="log-out-outline" size={20} color="#ef4444" />
             <Text style={styles.logoutText}>Se déconnecter</Text>
           </TouchableOpacity>
         </View>
-        <View style={{ height: 100 }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* --- MODALE D'ÉVALUATION INTERACTIVE --- */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isRatingModalVisible}
+        onRequestClose={() => setIsRatingModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <TouchableOpacity style={styles.closeModalBtn} onPress={() => setIsRatingModalVisible(false)}>
+              <Ionicons name="close" size={22} color="#94a3b8" />
+            </TouchableOpacity>
+
+            <Ionicons name="heart-circle" size={50} color="#166534" style={styles.modalIcon} />
+            <Text style={styles.modalTitle}>Vous aimez SAMA GOX ?</Text>
+            <Text style={styles.modalSubtitle}>Laissez-nous une note pour soutenir notre initiative citoyenne à Dakar !</Text>
+
+            <View style={styles.starsContainer}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity key={star} onPress={() => setRating(star)} activeOpacity={0.7}>
+                  <Ionicons name={star <= rating ? "star" : "star-outline"} size={32} color={star <= rating ? "#eab308" : "#cbd5e1"} />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Votre avis ou suggestion (optionnel)..."
+              placeholderTextColor="#94a3b8"
+              multiline
+              numberOfLines={3}
+              value={reviewText}
+              onChangeText={setReviewText}
+            />
+
+            <TouchableOpacity style={styles.submitBtn} onPress={handleSubmitRating}>
+              <Text style={styles.submitBtnText}>Envoyer mon avis</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F7FBF7' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
-  title: { fontSize: 18, fontWeight: 'bold', color: '#1e293b' },
-  profileCard: { backgroundColor: 'white', margin: 16, borderRadius: 24, padding: 24, alignItems: 'center' },
-  avatarContainer: { position: 'relative', marginBottom: 16 },
-  avatar: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#166534', justifyContent: 'center', alignItems: 'center' },
-  avatarLetter: { fontSize: 42, fontWeight: 'bold', color: 'white' },
-  editAvatar: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#166534', width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  userName: { fontSize: 20, fontWeight: 'bold', color: '#1e293b', marginTop: 8 },
-  userEmail: { fontSize: 14, color: '#64748b', marginTop: 4 },
-  userPhone: { fontSize: 14, color: '#64748b', marginTop: 2 },
-  streetBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#f0fdf4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, marginTop: 8, borderWidth: 1, borderColor: '#bbf7d0' },
-  editForm: { width: '100%', marginTop: 16 },
-  inputLabel: { fontSize: 12, fontWeight: '600', color: '#64748b', marginBottom: 4, marginLeft: 4 },
-  input: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 14, fontSize: 15, marginBottom: 14, color: '#1e293b' },
-  inputDisabled: { opacity: 0.5 },
-  // ✅ Styles du sélecteur de zone (mêmes noms/valeurs que register.tsx pour cohérence visuelle)
+  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' },
+  header: { 
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', 
+    paddingHorizontal: 16, paddingVertical: 14, backgroundColor: 'white', 
+    borderBottomWidth: 1, borderBottomColor: '#f1f5f9' 
+  },
+  backBtn: { padding: 6, backgroundColor: '#f1f5f9', borderRadius: 10 },
+  editBtn: { padding: 6, backgroundColor: '#f0fdf4', borderRadius: 10 },
+  title: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
+  
+  profileCard: { 
+    backgroundColor: 'white', marginHorizontal: 16, marginTop: 16, marginBottom: 14, 
+    borderRadius: 20, padding: 24, alignItems: 'center',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.02, shadowRadius: 8 },
+      android: { elevation: 1 }
+    })
+  },
+  avatarContainer: { position: 'relative', marginBottom: 12 },
+  avatar: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#166534', justifyContent: 'center', alignItems: 'center' },
+  avatarLetter: { fontSize: 36, fontWeight: '700', color: 'white' },
+  editAvatar: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#166534', width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: 'white' },
+  
+  userName: { fontSize: 18, fontWeight: '700', color: '#0f172a', marginTop: 6 },
+  userEmail: { fontSize: 13, color: '#475569', marginTop: 2, fontWeight: '500' },
+  userPhone: { fontSize: 13, color: '#475569', marginTop: 2, fontWeight: '500' },
+  userPhoneUnset: { color: '#94a3b8', fontStyle: 'italic' },
+  
+  streetBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#f0fdf4', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginTop: 10, borderWidth: 1, borderColor: '#bbf7d0' },
+  streetText: { fontSize: 12, color: '#166534', fontWeight: '600' },
+  
+  editForm: { width: '100%', marginTop: 8 },
+  inputLabel: { fontSize: 12, fontWeight: '700', color: '#475569', marginBottom: 6, marginLeft: 2 },
+  input: { backgroundColor: 'white', borderRadius: 10, padding: 14, fontSize: 14, marginBottom: 14, color: '#0f172a', borderWidth: 1, borderColor: '#cbd5e1' },
+  inputDisabled: { backgroundColor: '#f8fafc', color: '#94a3b8', borderColor: '#e2e8f0' },
+  
   streetsListProfile: { marginBottom: 14 },
-  streetOption: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 15, backgroundColor: "#f8fafc", borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: "#e2e8f0", gap: 10 },
-  streetOptionActive: { borderColor: "#166534", backgroundColor: '#f0fdf4' },
-  streetText: { fontSize: 12, color: "#166534", fontWeight: '500' },
-  streetTextActive: { color: "#166534", fontWeight: "500" },
-  saveButton: { backgroundColor: '#166534', borderRadius: 12, padding: 16, alignItems: 'center', marginTop: 4 },
-  saveButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
-  statsContainer: { flexDirection: 'row', backgroundColor: 'white', marginHorizontal: 16, borderRadius: 20, padding: 16, marginBottom: 16 },
-  statItem: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 22, fontWeight: 'bold', color: '#166534' },
-  statLabel: { fontSize: 12, color: '#64748b', marginTop: 4 },
-  statDivider: { width: 1, backgroundColor: '#e2e8f0' },
-  menuSection: { backgroundColor: 'white', marginHorizontal: 16, borderRadius: 20, padding: 8, marginBottom: 16 },
-  menuTitle: { fontSize: 16, fontWeight: '600', color: '#1e293b', paddingHorizontal: 12, paddingVertical: 12 },
-  menuItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12 },
-  menuIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  menuText: { flex: 1, fontSize: 15, color: '#1e293b' },
-  badge: { backgroundColor: '#ef4444', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 2, marginRight: 8 },
-  badgeText: { color: 'white', fontSize: 11, fontWeight: 'bold' },
-  footer: { marginHorizontal: 16, marginTop: 8, marginBottom: 20, alignItems: 'center' },
-  versionText: { fontSize: 12, color: '#94a3b8', marginBottom: 16 },
-  logoutButton: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, backgroundColor: 'white', borderRadius: 16, width: '100%', justifyContent: 'center' },
-  logoutText: { fontSize: 16, color: '#ef4444', fontWeight: '500' },
+  streetOption: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 15, backgroundColor: "white", borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: "#cbd5e1", gap: 10 },
+  streetOptionActive: { borderColor: "#166534", backgroundColor: '#f0fdf4', borderWidth: 1.5 },
+  streetTextOption: { fontSize: 14, color: "#475569", fontWeight: '500' },
+  streetTextActive: { color: "#166534", fontWeight: "600" },
+  
+  saveButton: { backgroundColor: '#166534', borderRadius: 10, padding: 15, alignItems: 'center', marginTop: 6 },
+  saveButtonText: { color: 'white', fontSize: 15, fontWeight: '700' },
+  
+  statsContainer: { 
+    flexDirection: 'row', backgroundColor: 'white', marginHorizontal: 16, 
+    borderRadius: 16, paddingVertical: 16, marginBottom: 14, alignItems: 'center',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.02, shadowRadius: 8 },
+      android: { elevation: 1 }
+    })
+  },
+  statItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  statValue: { fontSize: 20, fontWeight: '700', color: '#0f172a' },
+  levelBadge: { paddingHorizontal: 12, paddingVertical: 2, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  levelValue: { fontSize: 13, fontWeight: '700' },
+  statLabel: { fontSize: 11, color: '#64748b', marginTop: 5, fontWeight: '600', letterSpacing: 0.1 },
+  statDivider: { width: 1, height: 30, backgroundColor: '#f1f5f9' },
+  
+  menuSection: { 
+    backgroundColor: 'white', marginHorizontal: 16, borderRadius: 16, padding: 8, marginBottom: 14,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.02, shadowRadius: 8 },
+      android: { elevation: 1 }
+    })
+  },
+  menuTitle: { fontSize: 14, fontWeight: '700', color: '#0f172a', paddingHorizontal: 10, paddingVertical: 10, letterSpacing: 0.2 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 12 },
+  menuIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  menuText: { flex: 1, fontSize: 14, color: '#334155', fontWeight: '500' },
+  badge: { backgroundColor: '#ef4444', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1.5, marginRight: 6 },
+  badgeText: { color: 'white', fontSize: 10, fontWeight: '700' },
+  
+  /* Zone de danger */
+  dangerSection: {
+    backgroundColor: 'white', marginHorizontal: 16, borderRadius: 16, padding: 16, marginBottom: 14,
+    borderWidth: 1, borderColor: '#fee2e2',
+    ...Platform.select({
+      ios: { shadowColor: '#ef4444', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.02, shadowRadius: 8 },
+      android: { elevation: 1 }
+    })
+  },
+  dangerTitle: { fontSize: 14, fontWeight: '700', color: '#991b1b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.3 },
+  dangerDescription: { fontSize: 12, color: '#64748b', marginBottom: 14, lineHeight: 16 },
+  deleteButton: {
+    backgroundColor: '#fff5f5', borderWidth: 1, borderColor: '#fca5a5',
+    padding: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center'
+  },
+  disabledButton: { opacity: 0.5 },
+  buttonFlexRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  deleteButtonText: { color: '#dc2626', fontWeight: '700', fontSize: 14 },
+
+  footer: { marginHorizontal: 16, marginTop: 10, alignItems: 'center' },
+  versionText: { fontSize: 11, color: '#94a3b8', marginBottom: 12, fontWeight: '500' },
+  logoutButton: { 
+    flexDirection: 'row', alignItems: 'center', gap: 8, padding: 14, 
+    backgroundColor: 'white', borderRadius: 12, width: '100%', justifyContent: 'center',
+    borderWidth: 1, borderColor: '#f1f5f9',
+    ...Platform.select({
+      ios: { shadowColor: '#ef4444', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 4 },
+      android: { elevation: 1 }
+    })
+  },
+  logoutText: { fontSize: 15, color: '#ef4444', fontWeight: '700' },
+
+  /* Styles de la Modale */
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalCard: { backgroundColor: 'white', borderRadius: 24, padding: 24, width: '100%', maxWidth: 340, alignItems: 'center', position: 'relative' },
+  closeModalBtn: { position: 'absolute', top: 16, right: 16, padding: 4 },
+  modalIcon: { marginBottom: 12 },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a', marginBottom: 6 },
+  modalSubtitle: { fontSize: 13, color: '#64748b', textAlign: 'center', lineHeight: 18, marginBottom: 16 },
+  starsContainer: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  modalInput: { width: '100%', backgroundColor: '#f8fafc', borderRadius: 12, padding: 12, fontSize: 13, color: '#0f172a', borderWidth: 1, borderColor: '#e2e8f0', textAlignVertical: 'top', height: 70, marginBottom: 18 },
+  submitBtn: { backgroundColor: '#166534', width: '100%', borderRadius: 12, padding: 14, alignItems: 'center' },
+  submitBtnText: { color: 'white', fontSize: 14, fontWeight: '700' },
 });

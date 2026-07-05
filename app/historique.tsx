@@ -3,7 +3,7 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useState, useCallback } from "react";
 import {
   SafeAreaView, StyleSheet, Text, TouchableOpacity,
-  View, FlatList, Platform, RefreshControl, Image
+  View, FlatList, Platform, RefreshControl, Image, ActivityIndicator
 } from "react-native";
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage'; // ✅ remplace localStorage
@@ -30,15 +30,22 @@ export default function HomeHistoryScreen() {
     try {
       // ✅ APRÈS
       const token = await AsyncStorage.getItem('token');
-      const response = await fetch(`${API_URL}/my-reports`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        }
-      });
-      const json = await response.json();
-      console.log("📋 Historique:", json);
-      setReports(json.data || []);
+     const response = await fetch(`${API_URL}/my-reports`, {
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Accept': 'application/json'
+  }
+});
+
+if (response.status === 401) {
+  await AsyncStorage.multiRemove(['token', 'user', 'role']);
+  router.replace('/login');
+  return;
+}
+
+const json = await response.json();
+console.log("📋 Historique:", json);
+setReports(json.data || []);
     } catch (error) {
       console.error("Erreur historique:", error);
     } finally {
@@ -57,11 +64,12 @@ export default function HomeHistoryScreen() {
   }, []);
 
   const renderStatusBadge = (status: string) => {
-    const config: Record<string, { label: string; color: string; bg: string; icon: string }> = {
-      pending:     { label: 'En attente',    color: '#ea580c', bg: '#fff7ed', icon: 'time-outline' },
-      in_progress: { label: 'En traitement', color: '#2563eb', bg: '#eff6ff', icon: 'construct-outline' },
-      resolved:    { label: 'Résolu',        color: '#16a34a', bg: '#f0fdf4', icon: 'checkmark-circle-outline' },
-    };
+  const config: Record<string, { label: string; color: string; bg: string; icon: string }> = {
+  pending:    { label: 'En attente', color: '#ea580c', bg: '#fff7ed', icon: 'time-outline' },
+  'en cours': { label: 'En cours',   color: '#2563eb', bg: '#eff6ff', icon: 'construct-outline' },
+  resolved:   { label: 'Résolu',     color: '#16a34a', bg: '#f0fdf4', icon: 'checkmark-circle-outline' },
+  rejected:   { label: 'Rejeté',     color: '#dc2626', bg: '#fef2f2', icon: 'close-circle-outline' },
+};
     const current = config[status] || config.pending;
     return (
       <View style={[styles.statusBadge, { backgroundColor: current.bg }]}>
@@ -88,6 +96,9 @@ export default function HomeHistoryScreen() {
         </TouchableOpacity>
       </View>
 
+ {loading ? (
+        <ActivityIndicator style={{ marginTop: 40 }} color="#166534" size="large" />
+      ) : (
       <FlatList
         data={reports}
         keyExtractor={(item) => item.id.toString()}
@@ -130,6 +141,7 @@ export default function HomeHistoryScreen() {
           </View>
         }
       />
+  )}
     </SafeAreaView>
   );
 }

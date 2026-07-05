@@ -4,33 +4,31 @@ import React, { useState } from "react";
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, SafeAreaView, ActivityIndicator,
+  KeyboardAvoidingView, ScrollView, Platform
 } from "react-native";
-import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
 import { saveAuth } from "../services/auth";
 import { API_URL } from "../services/api";
+import { registerAndSavePushToken } from "../services/notifications";
 
 export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [secureText, setSecureText] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const registerPushToken = async (token: string) => {
-    if (!Device.isDevice) return;
-    const { status } = await Notifications.requestPermissionsAsync();
-    if (status !== 'granted') return;
-    const pushToken = (await Notifications.getExpoPushTokenAsync()).data;
-    await fetch(`${API_URL}/save-push-token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({ token: pushToken }),
-    });
+  // ✅ Formate le délai d'attente en texte lisible
+  const formatRetryDelay = (seconds: number) => {
+    if (seconds < 60) {
+      return `${seconds} seconde${seconds > 1 ? 's' : ''}`;
+    }
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    if (remainingSeconds === 0) {
+      return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+    }
+    return `${minutes} minute${minutes > 1 ? 's' : ''} et ${remainingSeconds} seconde${remainingSeconds > 1 ? 's' : ''}`;
   };
 
   const handleLogin = async () => {
@@ -49,6 +47,16 @@ export default function LoginScreen() {
         },
         body: JSON.stringify({ email, password }),
       });
+
+      // ✅ Gestion spécifique du rate limiting (429 Too Many Requests)
+      if (response.status === 429) {
+        const retryAfterHeader = response.headers.get('Retry-After');
+        const retryAfter = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 60;
+        setError(`Trop de tentatives. Réessayez dans ${formatRetryDelay(retryAfter)}.`);
+        setLoading(false);
+        return;
+      }
+
       const data = await response.json();
       if (response.ok) {
         await saveAuth(data.token, {
@@ -58,13 +66,16 @@ export default function LoginScreen() {
           role:  data.user.role,
         });
 
-        // ✅ Enregistrement du token push (citoyens uniquement)
+        // ✅ Enregistrement du token push (citoyens uniquement), via la fonction centralisée
+        // qui gère déjà le guard Expo Go, le canal Android, et les erreurs réseau.
         if (data.user.role === 'citizen') {
-          await registerPushToken(data.token);
+          await registerAndSavePushToken();
         }
 
         if (data.user.role === 'driver') {
           router.replace('/driver');
+        } else if (data.user.role === 'admin') {
+          router.replace('/admin');
         } else {
           router.replace('/');
         }
@@ -80,88 +91,112 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.card}>
-
-        {/* Logo SAMA GOX */}
-        <View style={styles.logoZone}>
-          <View style={styles.logoCircle}>
-            <Ionicons name="trash" size={26} color="#4ade80" />
-          </View>
-          <View style={styles.logoRow}>
-            <Text style={styles.logoSama}>SAMA</Text>
-            <Text style={styles.logoGox}> GOX</Text>
-          </View>
-          <View style={styles.logoBadge}>
-            <Text style={styles.logoBadgeText}>Mon quartier propre</Text>
-          </View>
-        </View>
-
-        <Text style={styles.title}>Bon retour 👋</Text>
-        <Text style={styles.subtitle}>Connectez-vous à votre compte</Text>
-
-        {error ? (
-          <View style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.labelRow}>
-          <Ionicons name="mail-outline" size={13} color="#374151" />
-          <Text style={styles.label}>Email</Text>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="votre@email.com"
-          placeholderTextColor="#94a3b8"
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-        />
-
-        <View style={styles.labelRow}>
-          <Ionicons name="lock-closed-outline" size={13} color="#374151" />
-          <Text style={styles.label}>Mot de passe</Text>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="••••••••"
-          placeholderTextColor="#94a3b8"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
-
-        <TouchableOpacity
-          onPress={() => router.push('/forgot-password')}
-          style={styles.forgotLink}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.keyboardView}
+      >
+        <ScrollView 
+          contentContainerStyle={styles.scrollContainer}
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.forgotText}>Mot de passe oublié ?</Text>
-        </TouchableOpacity>
+          <View style={styles.card}>
 
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
-          activeOpacity={0.85}
-        >
-          {loading
-            ? <ActivityIndicator color="white" />
-            : <Text style={styles.buttonText}>Se connecter</Text>
-          }
-        </TouchableOpacity>
+            {/* Logo SAMA GOX */}
+            <View style={styles.logoZone}>
+              <View style={styles.logoCircle}>
+                <Ionicons name="trash" size={26} color="#4ade80" />
+              </View>
+              <View style={styles.logoRow}>
+                <Text style={styles.logoSama}>SAMA</Text>
+                <Text style={styles.logoGox}> GOX</Text>
+              </View>
+              <View style={styles.logoBadge}>
+                <Text style={styles.logoBadgeText}>Mon quartier propre</Text>
+              </View>
+            </View>
 
-        <TouchableOpacity
-          onPress={() => router.push("/register")}
-          style={styles.registerLink}
-        >
-          <Text style={styles.registerText}>
-            Pas de compte ?{' '}
-            <Text style={styles.registerTextBold}>S'inscrire</Text>
-          </Text>
-        </TouchableOpacity>
+            <Text style={styles.title}>Bon retour 👋</Text>
+            <Text style={styles.subtitle}>Connectez-vous à votre compte</Text>
 
-      </View>
+            {error ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            {/* Champ Email */}
+            <View style={styles.labelRow}>
+              <Ionicons name="mail-outline" size={13} color="#374151" />
+              <Text style={styles.label}>Email</Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              placeholder="votre@email.com"
+              placeholderTextColor="#94a3b8"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+
+            {/* Champ Mot de passe */}
+            <View style={styles.labelRow}>
+              <Ionicons name="lock-closed-outline" size={13} color="#374151" />
+              <Text style={styles.label}>Mot de passe</Text>
+            </View>
+            <View style={styles.passwordInputContainer}>
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="••••••••"
+                placeholderTextColor="#94a3b8"
+                secureTextEntry={secureText}
+                value={password}
+                onChangeText={setPassword}
+              />
+              <TouchableOpacity 
+                style={styles.eyeIcon} 
+                onPress={() => setSecureText(!secureText)}
+              >
+                <Ionicons 
+                  name={secureText ? "eye-off-outline" : "eye-outline"} 
+                  size={20} 
+                  color="#64748b" 
+                />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => router.push('/forgot-password')}
+              style={styles.forgotLink}
+            >
+              <Text style={styles.forgotText}>Mot de passe oublié ?</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading
+                ? <ActivityIndicator color="white" />
+                : <Text style={styles.buttonText}>Se connecter</Text>
+              }
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => router.push("/register")}
+              style={styles.registerLink}
+            >
+              <Text style={styles.registerText}>
+                Pas de compte ?{' '}
+                <Text style={styles.registerTextBold}>S'inscrire</Text>
+              </Text>
+            </TouchableOpacity>
+
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -170,6 +205,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F0FDF4',
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  scrollContainer: {
+    flexGrow: 1,
     justifyContent: 'center',
     padding: 20,
   },
@@ -207,6 +248,26 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     fontSize: 15,
     color: '#1e293b',
+  },
+  passwordInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 16,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 14,
+    fontSize: 15,
+    color: '#1e293b',
+  },
+  eyeIcon: {
+    paddingHorizontal: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   forgotLink:       { alignSelf: 'flex-end', marginBottom: 20, marginTop: -8 },
   forgotText:       { color: '#166534', fontSize: 13, fontWeight: '500' },

@@ -15,7 +15,7 @@ import {
     View
 } from "react-native";
 import { API_URL } from '../services/api';
-import { getToken } from '../services/auth';
+import { getToken, logout } from '../services/auth';
 
 const GREEN = '#166534';
 const GREEN_LIGHT = '#f0fdf4';
@@ -87,6 +87,34 @@ export default function AdminScreen() {
 
   useEffect(() => { fetchAll(); }, []);
 
+  // ✅ Déconnexion propre : invalide le token côté serveur, nettoie le stockage local,
+  // puis redirige vers /login. Remplace l'ancien router.back() qui menait vers un écran
+  // imprévisible selon l'historique de navigation (parfois /login directement, de façon incohérente).
+  const handleLogout = () => {
+    Alert.alert("Déconnexion", "Voulez-vous vraiment vous déconnecter ?", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Se déconnecter", style: "destructive",
+        onPress: async () => {
+          try {
+            const token = await getToken();
+            if (token) {
+              await fetch(`${API_URL}/logout`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' },
+              });
+            }
+          } catch (e) {
+            console.log("Erreur serveur logout");
+          } finally {
+            await logout();
+            router.replace('/login');
+          }
+        },
+      },
+    ]);
+  };
+
   const changeStatus = async (id: number, status: string) => {
     const token = await getToken();
     await fetch(`${API_URL}/admin/reports/${id}/status`, {
@@ -132,8 +160,8 @@ export default function AdminScreen() {
     <SafeAreaView style={s.safe}>
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={22} color={TEXT} />
+        <TouchableOpacity onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={22} color={RED} />
         </TouchableOpacity>
         <Text style={s.title}>Console Admin</Text>
         <TouchableOpacity onPress={fetchAll}>

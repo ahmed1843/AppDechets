@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -15,7 +16,7 @@ import {
   View
 } from 'react-native';
 import { API_URL } from '../services/api';
-import { getToken } from '../services/auth';
+import { getToken, logout } from '../services/auth';
 
 const CATEGORIES = [
   { id: 'depot_sauvage', label: 'Dépôt sauvage', icon: '🗑️' },
@@ -58,21 +59,29 @@ export default function ReportScreen() {
     }
   };
 
-  const pickImage = async () => {
-    if (Platform.OS === 'web') {
-      document.getElementById('web-image-input')?.click();
+const pickImage = async () => {
+  if (Platform.OS === 'web') {
+    document.getElementById('web-image-input')?.click();
+    return;
+  }
+  try {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert("Permission", "Accès galerie refusé");
       return;
     }
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status === 'granted') {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        allowsEditing: true,
-        quality: 0.7,
-      });
-      if (!result.canceled) setImage(result.assets[0].uri);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setImage(result.assets[0].uri);
     }
-  };
-
+  } catch (e) {
+    console.error(e);
+    Alert.alert("Erreur", "Impossible d'ouvrir la galerie");
+  }
+};
   const handleWebImage = (e: any) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -80,6 +89,39 @@ export default function ReportScreen() {
       setImageFile(file);
     }
   };
+// ✅ Récupère la position GPS réelle du signalement, avec fallback sûr.
+// Le chauffeur doit connaître la vraie position du dépôt — mais on ne bloque
+// jamais l'envoi si le GPS échoue ou si la permission est refusée (fiabilité en démo).
+const getReportCoordinates = async (): Promise<{ latitude: string; longitude: string; isReal: boolean }> => {
+  const DEFAULT_COORDS = { latitude: '14.6937', longitude: '-17.4441', isReal: false };
+
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      return DEFAULT_COORDS;
+    }
+
+    // Timeout de sécurité : le GPS peut être lent/instable en intérieur.
+    // On abandonne après 8s plutôt que de laisser l'utilisateur bloqué.
+    const position = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+    ]);
+
+    if (!position) {
+      return DEFAULT_COORDS;
+    }
+
+    return {
+      latitude: String(position.coords.latitude),
+      longitude: String(position.coords.longitude),
+      isReal: true,
+    };
+  } catch (e) {
+    console.log('⚠️ GPS indisponible, position par défaut utilisée:', e);
+    return DEFAULT_COORDS;
+  }
+};
 
   const handleSubmit = async () => {
     if (!selectedCategory) {
@@ -99,14 +141,18 @@ export default function ReportScreen() {
 
     try {
       const token = await getToken();
-
       const formData = new FormData();
       formData.append('title', title);
       formData.append('description', description);
       formData.append('location', location);
       formData.append('category', selectedCategory);
-      formData.append('latitude', '14.6937');
-      formData.append('longitude', '-17.4441');
+    const coords = await getReportCoordinates();
+formData.append('latitude', coords.latitude);
+formData.append('longitude', coords.longitude);
+
+if (!coords.isReal) {
+  console.log('ℹ️ Signalement envoyé avec position par défaut (GPS indisponible ou refusé)');
+}
 
       if (image) {
         if (Platform.OS === 'web' && imageFile) {
@@ -123,25 +169,31 @@ export default function ReportScreen() {
         }
       }
 
-      const response = await fetch(`${API_URL}/reports`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        body: formData,
-      });
+const response = await fetch(`${API_URL}/reports`, {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Accept': 'application/json',
+  },
+  body: formData,
+});
 
-      const data = await response.json();
+if (response.status === 401) {
+  await logout();
+  router.replace('/login');
+  return;
+}
 
-      if (response.ok) {
-     // Par :
-const pointsGagnes = image ? 70 : 50;
-Alert.alert(
-  "✅ Signalement envoyé !",
-  `🎉 Vous avez gagné +${pointsGagnes} points éco !`,
-  [{ text: "Voir mes points", onPress: () => router.replace('/points') },
-   { text: "OK", onPress: () => router.replace('/historique') }]
-);
+const data = await response.json();
+
+if (response.ok) {
+        const pointsGagnes = image ? 70 : 50;
+        Alert.alert(
+          "✅ Signalement envoyé !",
+          `🎉 Vous avez gagné +${pointsGagnes} points éco !`,
+          [{ text: "Voir mes points", onPress: () => router.replace('/points') },
+           { text: "OK", onPress: () => router.replace('/historique') }]
+        );
       } else {
         Alert.alert("Erreur", data.message || "Échec de l'envoi");
       }
@@ -157,14 +209,14 @@ Alert.alert(
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="black" />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={22} color="#1e293b" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Signaler un dépôt</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 36 }} />
       </View>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
         {/* Catégories */}
         <Text style={styles.label}>Catégorie *</Text>
@@ -185,7 +237,7 @@ Alert.alert(
               <Text style={[
                 styles.categoryLabel,
                 selectedCategory === cat.id && styles.categoryLabelSelected
-              ]}>
+              ]} numberOfLines={2}>
                 {cat.label}
               </Text>
             </TouchableOpacity>
@@ -199,6 +251,7 @@ Alert.alert(
           value={title}
           onChangeText={setTitle}
           placeholder="Titre du signalement..."
+          placeholderTextColor="#94a3b8"
         />
         {title.trim().length > 0 && title.trim().length < 5 && (
           <Text style={styles.errorText}>Minimum 5 caractères ({title.trim().length}/5)</Text>
@@ -211,20 +264,23 @@ Alert.alert(
           value={description}
           onChangeText={setDescription}
           multiline
-          placeholder="Décrivez le problème..."
+          numberOfLines={4}
+          placeholder="Décrivez le problème avec précision..."
+          placeholderTextColor="#94a3b8"
         />
         {description.trim().length > 0 && description.trim().length < 10 && (
           <Text style={styles.errorText}>Minimum 10 caractères ({description.trim().length}/10)</Text>
         )}
 
         {/* Photos */}
+        <Text style={styles.label}>Ajouter des photos</Text>
         <View style={styles.photoContainer}>
           <TouchableOpacity style={styles.photoButton} onPress={takePhoto}>
-            <Ionicons name="camera" size={30} color="#166534" />
+            <Ionicons name="camera" size={26} color="#166534" />
             <Text style={styles.photoText}>Caméra</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.photoButton} onPress={pickImage}>
-            <Ionicons name="images" size={30} color="#166534" />
+            <Ionicons name="images" size={26} color="#166534" />
             <Text style={styles.photoText}>Galerie</Text>
           </TouchableOpacity>
         </View>
@@ -243,7 +299,7 @@ Alert.alert(
           <View style={styles.previewContainer}>
             <Image source={{ uri: image }} style={styles.preview} />
             <TouchableOpacity onPress={() => setImage(null)} style={styles.removePhoto}>
-              <Ionicons name="close-circle" size={28} color="#ef4444" />
+              <Ionicons name="close-circle" size={26} color="#ef4444" />
             </TouchableOpacity>
           </View>
         )}
@@ -260,81 +316,107 @@ Alert.alert(
           )}
         </TouchableOpacity>
 
+        <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'white' },
+  container: { flex: 1, backgroundColor: '#F8FAFC' }, // Arrière-plan rafraîchi pour correspondre au calendrier
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 20, borderBottomWidth: 1, borderBottomColor: '#e2e8f0'
+    paddingHorizontal: 16, paddingVertical: 14, backgroundColor: 'white',
+    borderBottomWidth: 1, borderBottomColor: '#f1f5f9'
   },
-  headerTitle: { fontSize: 18, fontWeight: 'bold' },
+  backBtn: {
+    padding: 6, backgroundColor: '#f1f5f9', borderRadius: 10
+  },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
   scrollView: { flex: 1 },
-  scrollContent: { padding: 20 },
-  label: { fontSize: 16, fontWeight: '600', marginBottom: 8, marginTop: 15 },
-  input: { backgroundColor: '#f1f5f9', borderRadius: 12, padding: 15 },
-  textArea: {
-    backgroundColor: '#f1f5f9', borderRadius: 12, padding: 15,
-    height: 100, textAlignVertical: 'top'
+  scrollContent: { padding: 16 },
+  label: { fontSize: 14, fontWeight: '700', color: '#334155', marginBottom: 8, marginTop: 18, letterSpacing: 0.1 },
+  
+  input: { 
+    backgroundColor: 'white', borderRadius: 10, padding: 14, fontSize: 14,
+    color: '#0f172a', borderWidth: 1, borderColor: '#cbd5e1'
   },
-  errorText: { color: '#ef4444', fontSize: 12, marginTop: 4 },
+  textArea: {
+    backgroundColor: 'white', borderRadius: 10, padding: 14, fontSize: 14,
+    color: '#0f172a', borderWidth: 1, borderColor: '#cbd5e1',
+    height: 110, textAlignVertical: 'top'
+  },
+  errorText: { color: '#ef4444', fontSize: 12, marginTop: 5, fontWeight: '500' },
+  
   // Catégories
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 4,
+    justifyContent: 'space-between',
+    rowGap: 12,
+    marginTop: 2,
   },
   categoryCard: {
-    width: '22%',
+    width: '23%',
     aspectRatio: 1,
     borderRadius: 12,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#e2e8f0',
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'white',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 6,
+    padding: 4,
+    
+    // Ombre discrète
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.02, shadowRadius: 4 },
+      android: { elevation: 1 }
+    })
   },
   categoryCardSelected: {
     borderColor: '#166534',
     backgroundColor: '#f0fdf4',
+    borderWidth: 1.5,
   },
   categoryIcon: {
-    fontSize: 26,
+    fontSize: 22,
+    marginBottom: 2,
   },
   categoryLabel: {
     fontSize: 9,
     textAlign: 'center',
-    color: '#64748b',
-    marginTop: 4,
-    fontWeight: '500',
+    color: '#475569',
+    fontWeight: '600',
+    lineHeight: 11,
   },
   categoryLabelSelected: {
     color: '#166534',
     fontWeight: '700',
   },
+  
   // Photos
-  photoContainer: { flexDirection: 'row', gap: 15, marginTop: 20 },
+  photoContainer: { flexDirection: 'row', gap: 12, marginTop: 2 },
   photoButton: {
-    flex: 1, height: 80, borderStyle: 'dashed', borderWidth: 2,
-    borderColor: '#166534', borderRadius: 12, justifyContent: 'center',
-    alignItems: 'center', backgroundColor: '#f0fdf4'
+    flex: 1, height: 65, borderStyle: 'dashed', borderWidth: 1.5,
+    borderColor: '#166534', borderRadius: 10, flexDirection: 'row',
+    gap: 8, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0fdf4'
   },
-  photoText: { color: '#166534', fontSize: 12, fontWeight: 'bold' },
-  previewContainer: { marginTop: 20, position: 'relative' },
-  preview: { width: '100%', height: 200, borderRadius: 12 },
+  photoText: { color: '#166534', fontSize: 13, fontWeight: '700' },
+  previewContainer: { marginTop: 16, position: 'relative' },
+  preview: { width: '100%', height: 180, borderRadius: 12 },
   removePhoto: {
-    position: 'absolute', top: 5, right: 5,
+    position: 'absolute', top: 8, right: 8,
     backgroundColor: 'white', borderRadius: 20
   },
+  
   submitButton: {
-    backgroundColor: '#166534', marginTop: 30, height: 55,
-    borderRadius: 12, justifyContent: 'center', alignItems: 'center'
+    backgroundColor: '#166534', marginTop: 24, height: 50,
+    borderRadius: 10, justifyContent: 'center', alignItems: 'center',
+    ...Platform.select({
+      ios: { shadowColor: '#166534', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
+      android: { elevation: 3 }
+    })
   },
   disabledButton: { backgroundColor: '#94a3b8' },
-  submitText: { color: 'white', fontSize: 16, fontWeight: 'bold' }
+  submitText: { color: 'white', fontSize: 15, fontWeight: '700' }
 });

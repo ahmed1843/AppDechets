@@ -16,6 +16,14 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// ✅ Détecte si l'app tourne dans Expo Go (vs un build natif/EAS)
+const isExpoGo = Constants.appOwnership === 'expo';
+
+// ✅ SOURCE UNIQUE pour l'enregistrement des push notifications.
+// Avant, cette logique était dupliquée à 3 endroits différents (notifications.ts, login.tsx, index.tsx)
+// avec des comportements incohérents (canal Android absent dans certaines versions, guard Expo Go absent
+// dans d'autres, source du projectId différente). Toute la logique vit maintenant ici, appelée
+// depuis login.tsx et index.tsx, garantissant un comportement identique partout dans l'app.
 export async function registerForPushNotificationsAsync() {
   let token;
 
@@ -30,33 +38,63 @@ export async function registerForPushNotificationsAsync() {
     return token;
   }
 
-  if (Device.isDevice) {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus !== 'granted') {
-      alert('Impossible d\'obtenir les permissions de notification');
-      return;
-    }
-
-    token = await Notifications.getExpoPushTokenAsync({
-      projectId: Constants.expoConfig?.extra?.eas?.projectId,
-    });
-    console.log('📱 Token mobile:', token);
-  } else {
-    alert('Must use physical device for Push Notifications');
+  // ✅ Guard : Expo Go (SDK 53+) ne supporte plus les push notifications distantes.
+  if (isExpoGo) {
+    console.log('ℹ️ Push notifications désactivées (Expo Go) — polling actif en fallback');
+    return undefined;
   }
 
-  return token?.data;
+  if (!Device.isDevice) {
+    console.log('ℹ️ Push notifications indisponibles sur simulateur/émulateur');
+    return undefined;
+  }
+
+  // ✅ Canal de notification Android — requis sur Android 8+ pour un affichage correct
+  // (son, vibration, importance). Auparavant configuré uniquement dans index.tsx,
+  // donc absent si l'enregistrement se déclenchait d'abord via login.tsx.
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('truck-alerts', {
+      name: 'Alertes camion poubelle',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      sound: 'default',
+      lightColor: '#166534',
+    });
+  }
+
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+
+  if (finalStatus !== 'granted') {
+    console.log('⚠️ Permission de notification refusée');
+    return undefined;
+  }
+
+  // ✅ try/catch pour éviter un crash si le réseau est instable
+  try {
+    // ✅ projectId : convention standard EAS (Constants.expoConfig), avec fallback
+    // sur la variable d'environnement utilisée précédemment dans index.tsx.
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ??
+      process.env.EXPO_PUBLIC_PROJECT_ID;
+
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    token = tokenData.data;
+    console.log('📱 Token mobile:', token);
+  } catch (error) {
+    console.log('⚠️ Impossible de récupérer le token push (réseau indisponible), polling reste actif:', error);
+    return undefined;
+  }
+
+  return token;
 }
 
 export async function savePushToken(token: string) {
-  // ✅ AsyncStorage au lieu de localStorage
   const authToken = await getToken();
 
   if (!authToken) {
@@ -83,8 +121,17 @@ export async function savePushToken(token: string) {
   }
 }
 
+// ✅ Fonction pratique combinant enregistrement + sauvegarde en un seul appel,
+// pour éviter que chaque écran (login, index...) ait à répéter les deux étapes manuellement.
+export async function registerAndSavePushToken() {
+  const token = await registerForPushNotificationsAsync();
+  if (token) {
+    await savePushToken(token);
+  }
+  return token;
+}
+
 export async function assignStreet(street: string) {
-  // ✅ AsyncStorage au lieu de localStorage
   const authToken = await getToken();
 
   if (!authToken) {
