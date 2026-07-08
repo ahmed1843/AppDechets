@@ -1,4 +1,4 @@
-import { MapPinned } from 'lucide-react-native';
+import { MapPin } from 'lucide-react-native';
 import React from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 
@@ -22,7 +22,7 @@ export default function MapScreen() {
   if (Platform.OS === 'web') {
     return (
       <View style={styles.webContainer}>
-        <MapPinned size={64} color="#166534" />
+       <MapPin size={64} color="#166534" />
         <Text style={styles.webTitle}>Mode Carte activé</Text>
         <Text style={styles.webText}>
           La carte interactive (Google Maps) est réservée à la version mobile.

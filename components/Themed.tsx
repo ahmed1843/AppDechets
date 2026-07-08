@@ -1,12 +1,11 @@
 /**
- * Learn more about Light and Dark modes:
- * https://docs.expo.io/guides/color-schemes/
+ * Palette de couleurs unique (pas de mode clair/sombre séparé).
+ * Voir constants/Design.ts pour la palette complète.
  */
 
 import { Text as DefaultText, View as DefaultView } from 'react-native';
 
-import Colors from '@/constants/Design';
-import { useColorScheme } from './useColorScheme';
+import { Colors } from '@/constants/Design';
 
 type ThemeProps = {
   lightColor?: string;
@@ -18,21 +17,21 @@ export type ViewProps = ThemeProps & DefaultView['props'];
 
 export function useThemeColor(
   props: { light?: string; dark?: string },
-  colorName: keyof typeof Colors.light & keyof typeof Colors.dark
+  colorName: keyof typeof Colors
 ) {
-  const theme = useColorScheme() ?? 'light';
-  const colorFromProps = props[theme];
+  // Palette unique : on ignore le light/dark du système,
+  // mais on garde la possibilité de forcer une couleur via props.
+  const colorFromProps = props.light ?? props.dark;
 
   if (colorFromProps) {
     return colorFromProps;
-  } else {
-    return Colors[theme][colorName];
   }
+  return Colors[colorName];
 }
 
 export function Text(props: TextProps) {
   const { style, lightColor, darkColor, ...otherProps } = props;
-  const color = useThemeColor({ light: lightColor, dark: darkColor }, 'text');
+  const color = useThemeColor({ light: lightColor, dark: darkColor }, 'text' as keyof typeof Colors);
 
   return <DefaultText style={[{ color }, style]} {...otherProps} />;
 }
