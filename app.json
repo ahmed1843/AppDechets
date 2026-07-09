@@ -17,12 +17,13 @@
     "ios": {
       "supportsTablet": false
     },
-    "android": {
-      "package": "com.smartwaste.app",
-      "googleServicesFile": "./google-services.json",
-      "adaptiveIcon": {
-        "backgroundColor": "#0D1117"
-      },
+ "android": {
+  "package": "com.smartwaste.app",
+  "googleServicesFile": "./google-services.json",
+  "useNextNotificationsApi": true,
+  "adaptiveIcon": {
+    "backgroundColor": "#0D1117"
+  },
       "config": {
         "googleMaps": {
           "apiKey": "VOTRE_CLE_GOOGLE_MAPS"
@@ -51,7 +52,8 @@
           "defaultChannel": "truck-alerts"
         }
       ],
-      "expo-router"
+      "expo-router",
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {
